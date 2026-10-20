@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Text.Json;
 using EpicGames.UHT.Types;
@@ -17,7 +18,7 @@ public static class PackageHeadersTracker
 {
     const string PackageDataFileName = "UnrealSharpPackagesData.json";
     
-    private static Dictionary<string, PackageHeaders?> _packageHeadersWriteRecord = new();
+    private static ConcurrentDictionary<string, PackageHeaders?> _packageHeadersWriteRecord = new();
     
     public static void DeserializeModuleHeaders()
     {
@@ -47,7 +48,7 @@ public static class PackageHeadersTracker
             return;
         }
         
-        _packageHeadersWriteRecord = new Dictionary<string, PackageHeaders?>(jsonValue!);
+        _packageHeadersWriteRecord = new ConcurrentDictionary<string, PackageHeaders?>(jsonValue!);
     }
     
     public static void SerializeModuleData()

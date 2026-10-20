@@ -1,10 +1,11 @@
-﻿using UnrealBuildTool;
+using UnrealBuildTool;
 
 public class UnrealSharpUtilities : ModuleRules
 {
     public UnrealSharpUtilities(ReadOnlyTargetRules Target) : base(Target)
     {
         PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+        PrivatePCHHeaderFile = "Private/UnrealSharpUtilitiesPCH.h";
         // Native Runtime modules must have UnrealGame manifests in installed BP plugins.
         PrecompileForTargets = PrecompileTargetsType.Any;
 

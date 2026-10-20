@@ -60,6 +60,10 @@ public static class Program
         ConsoleUtilities.Log("Initializing UnrealSharp C# bindings generator...");
         
         GeneratorStatics.Initialize(factory);
+        if (PrecompiledBlueprintConsumer.TryUseSdk())
+        {
+            return;
+        }
         ExportBindings();
         
         FileExporter.CleanOldExportedFiles();

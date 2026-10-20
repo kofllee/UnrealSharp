@@ -1,4 +1,4 @@
-﻿#include "Compilers/CSManagedClassCompiler.h"
+#include "Compilers/CSManagedClassCompiler.h"
 #include "CSManagedAssembly.h"
 #include "CSManager.h"
 #include "Compilers/CSSimpleConstructionScriptCompiler.h"
@@ -16,6 +16,7 @@
 
 #if WITH_EDITOR
 #include "BlueprintActionDatabase.h"
+#include "Editor.h"
 #endif
 
 UCSManagedClassCompiler::UCSManagedClassCompiler()

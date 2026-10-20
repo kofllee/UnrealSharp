@@ -74,6 +74,19 @@ public static class PrecompiledGameSdkUtilities
     public static void CopyVerifiedSdk(string source, string output, UnrealTargetPlatform platform,
         TargetType target, UnrealTargetConfiguration config)
     {
+        Manifest manifest = VerifySdk(source, platform, target, config);
+        Directory.CreateDirectory(output);
+        foreach (string relative in manifest.Files.Keys)
+        {
+            string to = Path.Combine(output, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+            File.Copy(Path.Combine(source, relative), to, true);
+        }
+    }
+
+    public static Manifest VerifySdk(string source, UnrealTargetPlatform platform,
+        TargetType target, UnrealTargetConfiguration config)
+    {
         string path = Path.Combine(source, ManifestName);
         if (!File.Exists(path)) throw new AutomationException($"Missing Game SDK manifest: {path}");
         Manifest? manifest = JsonSerializer.Deserialize<Manifest>(File.ReadAllText(path));
@@ -95,12 +108,6 @@ public static class PrecompiledGameSdkUtilities
                 .Equals(hash, StringComparison.OrdinalIgnoreCase))
                 throw new AutomationException($"Missing or corrupted Game SDK asset: {relative}");
         }
-        Directory.CreateDirectory(output);
-        foreach (string relative in manifest.Files.Keys)
-        {
-            string to = Path.Combine(output, relative);
-            Directory.CreateDirectory(Path.GetDirectoryName(to)!);
-            File.Copy(Path.Combine(source, relative), to, true);
-        }
+        return manifest;
     }
 }

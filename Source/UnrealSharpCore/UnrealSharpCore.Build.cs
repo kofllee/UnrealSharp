@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using UnrealBuildTool;
 
 public class UnrealSharpCore : ModuleRules
@@ -6,6 +6,7 @@ public class UnrealSharpCore : ModuleRules
 	public UnrealSharpCore(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+        PrivatePCHHeaderFile = "Private/UnrealSharpCorePCH.h";
         // Native Runtime modules must have UnrealGame manifests in installed BP plugins.
         PrecompileForTargets = PrecompileTargetsType.Any;
 		

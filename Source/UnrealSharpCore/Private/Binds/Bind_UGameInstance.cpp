@@ -1,4 +1,6 @@
-﻿#include "CSBindsRegistry.h"
+#include "Engine/GameInstance.h"
+#include "Subsystems/GameInstanceSubsystem.h"
+#include "CSBindsRegistry.h"
 #include "CSManager.h"
 
 DECLARE_UNREALSHARP_BINDER(Bind_UGameInstance)

@@ -1,5 +1,53 @@
 # Precompiled UnrealSharp for Blueprint-only projects (Win64)
 
+## Validate or resume without repeating successful stages
+
+`BuildPrecompiledForBP.ps1 -PreflightOnly` performs no native or managed builds.
+Pass the same EngineRoot, HostProject, PluginDirectory and OutputDirectory as
+the normal invocation. It verifies the Game SDK target, configuration, framework,
+engine fingerprint and every recorded SHA256 hash.
+
+After a failed BuildPlugin, preserve its `HostProject` directory. Use
+`-ResumeHostProject '<failed package>/HostProject/HostProject.uproject'` with a
+new OutputDirectory to continue. This mode skips the producer Editor/Game SDK
+stages, updates staged native sources and calls UE's own CompilePlugin and
+PackagePlugin functions against the existing host. UBT keeps successful objects
+and rebuilds only invalidated inputs. It still verifies Editor, Development
+and Shipping; these checks do not imply rebuilding unchanged targets.
+
+The source producer must contain the matching already generated managed SDKs.
+Use only a disposable host created by BuildPlugin as ResumeHostProject.
+Do not use a normal game project as the resume host.
+
+Fresh builds stage sources under `<OutputDirectory>.work/HostProject`, or under
+`-WorkDirectory <path>`. Keep that directory and a failed package's HostProject
+while diagnosing; remove them after a successful release. The final plugin's
+`Intermediate/Build` directory contains required native precompiled manifests
+and objects: **do not delete it** from a distributable BP plugin.
+
+The native Core and Utilities modules use explicit private PCHs, avoiding a
+dependency on which shared PCH the host happens to select. This is not a
+StrictIncludes / no-PCH certification.
+
+The distributor uses UE's CompilePlugin and PackagePlugin functions directly
+so that an existing synthetic host can be resumed. Game Core and Utilities are
+precompiled without native debug type records: MSVC's embedded PCH type records
+contain producer absolute paths and otherwise cause LNK2011 after relocation.
+Editor debugging is unchanged; managed debugging remains available.
+
+The output descriptor sets EnabledByDefault=false. Explicitly enable UnrealSharp
+in the consumer's Plugins window or .uproject. This makes UE detect the native
+plugin and generate its normal temporary target under Intermediate/Source.
+The consumer remains BP-only; an installed MSVC/Windows SDK toolchain is still
+needed to link the game executable. Distributed Game Build.cs rules use
+bUsePrecompiled rather than compiling the plugin's native source again.
+
+Installed pure-BP consumers reuse Editor/Game SDKs during native UHT. Game SDK
+identity and hashes are checked first. Projects that add native project modules
+continue through normal glue generation. Reflected APIs from additional native
+plugins must be included in the producer SDK; this fast path does not generate
+new bindings for them.
+
 The native precompiled plugin must contain **both Editor and Game** binaries,
 and its managed payload must include a **target-specific Game SDK**. Editor DLLs
 are not a substitute for Game DLLs or precompiled native receipts.

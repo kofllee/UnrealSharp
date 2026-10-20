@@ -1,7 +1,10 @@
-
+#include "CSBuildUtilties.h"
+#if WITH_EDITOR
+#include "Editor.h"
+#endif
 #if WITH_EDITOR
 
-#include "CSBuildUtilties.h"
+
 #include "CSBuildActionUtilities.h"
 #include "CSPathsUtilities.h"
 #include "CSProcessUtilities.h"

@@ -1,4 +1,5 @@
 #include "CSBindsRegistry.h"
+#include "HAL/IConsoleManager.h"
 #include "UnrealSharpBinds.h"
 #include "Logging/StructuredLog.h"
 

@@ -1,4 +1,5 @@
-﻿#include "CSBindsRegistry.h"
+#include <memory>
+#include "CSBindsRegistry.h"
 #include "StructUtils/InstancedStruct.h"
 
 DECLARE_UNREALSHARP_BINDER(Bind_FInstancedStruct)

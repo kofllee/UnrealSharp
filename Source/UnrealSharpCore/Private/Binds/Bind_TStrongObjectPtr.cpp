@@ -1,4 +1,5 @@
-﻿#include "CSBindsRegistry.h"
+#include <memory>
+#include "CSBindsRegistry.h"
 
 DECLARE_UNREALSHARP_BINDER(Bind_TStrongObjectPtr)
 {

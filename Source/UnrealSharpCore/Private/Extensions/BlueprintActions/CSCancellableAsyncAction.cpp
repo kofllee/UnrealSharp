@@ -1,4 +1,8 @@
-﻿#include "Extensions/BlueprintActions/CSCancellableAsyncAction.h"
+#include "Extensions/BlueprintActions/CSCancellableAsyncAction.h"
+
+#if WITH_EDITOR
+#include "Editor.h"
+#endif
 
 void UCSCancellableAsyncAction::Activate()
 {
