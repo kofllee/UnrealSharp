@@ -63,3 +63,26 @@ automatically. A native EXE alone is not yet a complete C# packaged game.
   Editor C# class compilation, Game Development/Shipping packaging, managed
   BeginPlay, and a deliberate missing Game DLL that must cause failure.
 - The source patch alone does not prove that the UE 5.8/Game smoke tests passed.
+
+
+## Fast retry without building Editor / Game again
+
+After a successful initial native build and successful Development/Shipping
+PrecompileGameSdk steps, use the following switch for the next attempt:
+
+    .\Scripts\BuildPrecompiledForBP.ps1 -EngineRoot "C:\Program Files\Epic Games\UE_5.8" -HostProject "C:\Dev\Host\Host.uproject" -PluginDirectory "C:\Dev\Host\Plugins\UnrealSharp" -OutputDirectory "C:\Dev\UnrealSharpDistribution_2" -BuildPluginOnly
+
+This validates existing managed SDKs and calls only native BuildPlugin. Use a
+**new** OutputDirectory on retry: a failed BuildPlugin leaves temporary HostProject
+files there, which must not be mixed into a new release.
+
+BuildPlugin uses a clean source staging copy excluding .git, Intermediate, obj,
+bin and backups. The builder sets
+UNREALSHARP_SKIP_MANAGED_UHT_FOR_BUILDPLUGIN=1 only for that UAT subprocess;
+the UnrealSharp UHT exporter skips the unnecessary managed C# glue export
+while native Unreal UHT still runs and precompiles C++ modules.
+
+The skip is intentionally scoped to BuildPlugin only. Normal Editor and Game
+host UHT generation and C# SDK compilation are unaffected. Do not set this
+environment variable globally. Pre-existing Engine Editor and Game SDKs
+must already be present before using -BuildPluginOnly.

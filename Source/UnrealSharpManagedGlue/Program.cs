@@ -46,6 +46,17 @@ public static class Program
     [UhtExporter(Name = "UnrealSharpCore", Description = "Exports C++ to C# code", Options = UhtExporterOptions.Default, ModuleName = "UnrealSharpCore")]
     private static void Main(IUhtExportFactory factory)
     {
+        // BuildPlugin creates a temporary HostProject to precompile *native* modules.
+        // That synthetic Editor target exposes a different set of engine plugins,
+        // whose C# glue need not (and sometimes cannot) be compiled. The distributable
+        // already contains independently verified Editor and Game managed assemblies.
+        if (string.Equals(Environment.GetEnvironmentVariable("UNREALSHARP_SKIP_MANAGED_UHT_FOR_BUILDPLUGIN"),
+                "1", StringComparison.Ordinal))
+        {
+            ConsoleUtilities.Log("BuildPlugin native-only pass: reusing prebuilt managed Editor/Game SDK; skipping C# glue export.");
+            return;
+        }
+
         ConsoleUtilities.Log("Initializing UnrealSharp C# bindings generator...");
         
         GeneratorStatics.Initialize(factory);

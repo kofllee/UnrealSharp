@@ -6,7 +6,8 @@ param(
     [Parameter(Mandatory=$true)][string]$HostProject,
     [Parameter(Mandatory=$true)][string]$PluginDirectory,
     [Parameter(Mandatory=$true)][string]$OutputDirectory,
-    [string[]]$Configurations = @("Development", "Shipping")
+    [string[]]$Configurations = @("Development", "Shipping"),
+    [switch]$BuildPluginOnly
 )
 $ErrorActionPreference = "Stop"
 function Require-File([string]$path) {
@@ -28,32 +29,64 @@ $UBT = Join-Path $EngineRoot "Engine\Build\BatchFiles\Build.bat"
 $UAT = Join-Path $EngineRoot "Engine\Build\BatchFiles\RunUAT.bat"
 Require-File (Join-Path $PluginDirectory "UnrealSharp.uplugin")
 Require-File $HostProject
-Run $UBT @("$($Target)Editor", "Win64", "Development", "-Project=$HostProject", "-WaitMutex")
+if (-not $BuildPluginOnly) {
+    Run $UBT @("$($Target)Editor", "Win64", "Development", "-Project=$HostProject", "-WaitMutex")
+    Require-File (Join-Path $PluginDirectory "Binaries\Managed\net10.0\UnrealSharp.Plugins.dll")
+    foreach ($Config in $Configurations) {
+        Run $UBT @($Target, "Win64", $Config, "-Project=$HostProject", "-WaitMutex")
+        Run $UAT @(
+            "PrecompileGameSdk",
+            "-Project=$HostProject",
+            "-ScriptsForProject=$HostProject",
+            "-ScriptDir=$HostDirectory",
+            "-UETargetType=Game",
+            "-UEBuildConfig=$Config",
+            "-TargetPlatform=Win64",
+            "-TargetArchitecture=X64"
+        )
+        Require-File (Join-Path $PluginDirectory "Binaries\Managed\Precompiled\Win64\Game\$Config\net10.0\UnrealSharp.GameSdk.json")
+    }
+}
+
+# A fast, explicit preflight. Existing SDKs are reused without recompiling UBT/UHT.
 Require-File (Join-Path $PluginDirectory "Binaries\Managed\net10.0\UnrealSharp.Plugins.dll")
 foreach ($Config in $Configurations) {
-    Run $UBT @($Target, "Win64", $Config, "-Project=$HostProject", "-WaitMutex")
-    Run $UAT @(
-        "PrecompileGameSdk",
-        "-Project=$HostProject",
-        "-ScriptsForProject=$HostProject",
-        "-ScriptDir=$HostDirectory",
-        "-UETargetType=Game",
-        "-UEBuildConfig=$Config",
-        "-TargetPlatform=Win64",
-        "-TargetArchitecture=X64"
-    )
-    Require-File (Join-Path $PluginDirectory "Binaries\Managed\Precompiled\Win64\Game\$Config\net10.0\UnrealSharp.GameSdk.json")
+    $sdk = Join-Path $PluginDirectory "Binaries\Managed\Precompiled\Win64\Game\$Config\net10.0"
+    Require-File (Join-Path $sdk "UnrealSharp.GameSdk.json")
+    foreach ($file in @("UnrealSharp.Plugins.dll","UnrealSharp.dll","UnrealSharp.Binds.dll","hostfxr.dll","hostpolicy.dll","coreclr.dll")) {
+        Require-File (Join-Path $sdk $file)
+    }
 }
+Write-Host "Managed preflight passed: Editor + $($Configurations -join ', ') Game SDKs exist."
+
 if (Test-Path -LiteralPath $OutputDirectory) {
     throw "OutputDirectory must be new, refusing to mix old binaries: $OutputDirectory"
 }
-Run $UAT @(
-    "BuildPlugin",
-    "-Plugin=$(Join-Path $PluginDirectory 'UnrealSharp.uplugin')",
-    "-Package=$OutputDirectory",
-    "-TargetPlatforms=Win64",
-    "-Rocket"
-)
+# BuildPlugin's temporary HostProject must NEVER regenerate its own Editor C#
+# bindings: the source host already produced compatible, tested managed SDKs.
+# Copy only clean sources; avoid 40k+ files from obj, Intermediate and .git.
+$buildInput = Join-Path $env:TEMP ("UnrealSharpBuildPluginInput_" + [guid]::NewGuid().ToString("N"))
+New-Item -Path $buildInput -ItemType Directory -Force | Out-Null
+& robocopy.exe $PluginDirectory $buildInput /E /XD .git .vs Intermediate Saved obj bin /XF *.bak /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
+if ($LASTEXITCODE -ge 8) {
+    throw "Failed to stage clean BuildPlugin input (robocopy code $LASTEXITCODE): $buildInput"
+}
+Require-File (Join-Path $buildInput "UnrealSharp.uplugin")
+Write-Host "BuildPlugin source staging: $buildInput"
+
+$previousSkip = [Environment]::GetEnvironmentVariable("UNREALSHARP_SKIP_MANAGED_UHT_FOR_BUILDPLUGIN", "Process")
+try {
+    $env:UNREALSHARP_SKIP_MANAGED_UHT_FOR_BUILDPLUGIN = "1"
+    Run $UAT @(
+        "BuildPlugin",
+        "-Plugin=$(Join-Path $buildInput 'UnrealSharp.uplugin')",
+        "-Package=$OutputDirectory",
+        "-TargetPlatforms=Win64",
+        "-Rocket"
+    )
+} finally {
+    [Environment]::SetEnvironmentVariable("UNREALSHARP_SKIP_MANAGED_UHT_FOR_BUILDPLUGIN", $previousSkip, "Process")
+}
 $ManagedDest = Join-Path $OutputDirectory "Binaries\Managed"
 New-Item -Path $ManagedDest -ItemType Directory -Force | Out-Null
 Copy-Item -Path (Join-Path $PluginDirectory "Binaries\Managed\*") -Destination $ManagedDest -Recurse -Force
