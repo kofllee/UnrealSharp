@@ -20,8 +20,6 @@ namespace UnrealSharp.Automation.BuildCommands;
 [Help("UserParams", "Optional. Additional parameters to forward to the user solution build. " + "These should be specified in the format -UserParams=\"-p:Property=Value\" -UserParams=\"--argument\".")]
 public class PackageProject : BuildCommand
 {
-    private const string ManagedFolderName = "Managed";
-    private const string BindingsProjectFolder = "UnrealSharp";
     private const int CleanupMaxAttempts = 5;
     private const int CleanupRetryDelayMs = 1000;
 
@@ -53,10 +51,10 @@ public class PackageProject : BuildCommand
         string RuntimeIdentifier = DotNetSdkUtilities.GetDotNetRuntimeIdentifier(options.TargetPlatform, options.TargetArchitecture);
         IList<string> Arguments = BuildBaseArguments(RuntimeIdentifier, options, PublishFolder);
 
-        BuildBindingsSolution(Arguments, options.BuildConfiguration);
+        EnsureGameSdk(PublishFolder, options);
         BuildUserBindings(PublishFolder, options, Arguments);
         BuildUserSolution(PublishFolder, Arguments, options);
-        
+        VerifyPackagedAssemblies(PublishFolder, options.TargetPlatform);
         EmitInstalledFlagFile(PublishFolder);
 
         LoggerUtilities.LogUnrealSharpInfo($"Packaging complete. Published files: {PublishFolder}");
@@ -169,15 +167,37 @@ public class PackageProject : BuildCommand
 
             $"-p:UETargetType={options.TargetType}",
             $"-p:UEBuildConfig={options.BuildConfiguration}",
+            $"-p:UETargetPlatform={options.TargetPlatform}",
 
-            $"-p:PublishDir=\"{publishFolder}\"",
+            $"-p:PublishDir={publishFolder}",
         ];
     }
 
-    private void BuildBindingsSolution(IList<string> arguments, UnrealTargetConfiguration buildConfig)
+    private void EnsureGameSdk(string output, PackagingOptions options)
     {
-        string BindingsPath = Path.Combine(this.GetUnrealSharpRootFolder(), ManagedFolderName, BindingsProjectFolder);
-        BuildCommands.BuildSolution.RunBuild(BindingsPath, buildConfig, publish: true, arguments);
+        string sdk = PathUtilities.GameSdkOutputPath(this.GetUnrealSharpRootFolder(),
+            options.TargetPlatform, options.TargetType, options.BuildConfiguration);
+        if (!PrecompiledGameSdkUtilities.HasSdk(sdk))
+        {
+            // Only a source C++ host that already ran native Game UHT can generate the SDK.
+            sdk = PrecompileGameSdk.Build(this, options.TargetType, options.BuildConfiguration,
+                options.TargetPlatform, options.TargetArchitecture);
+        }
+        PrecompiledGameSdkUtilities.CopyVerifiedSdk(sdk, output, options.TargetPlatform,
+            options.TargetType, options.BuildConfiguration);
+    }
+
+    private static void VerifyPackagedAssemblies(string output, UnrealTargetPlatform platform)
+    {
+        PrecompiledGameSdkUtilities.VerifyRuntimeFiles(output, platform);
+        foreach (string loadOrder in Directory.GetFiles(output, "*.LoadOrder.json"))
+        {
+            foreach (string name in AssemblyUtilities.ReadLoadOrder(loadOrder))
+            {
+                if (!File.Exists(Path.Combine(output, name + ".dll")))
+                    throw new AutomationException($"Missing Game DLL '{name}' required by {loadOrder}");
+            }
+        }
     }
 
     private void BuildUserSolution(string publishFolder, IList<string> buildArguments, PackagingOptions options)
@@ -242,26 +262,23 @@ public class PackageProject : BuildCommand
 
         if (!File.Exists(GlueManifest))
         {
-            LoggerUtilities.LogUnrealSharpWarning($"Runtime glue manifest not found at {GlueManifest}. Was the C++ project built at least once? Packaged build may be missing generated glue.");
-            return;
+            throw new AutomationException($"Required installed Game glue manifest is missing: {GlueManifest}");
         }
 
         File.Copy(GlueManifest, Path.Combine(publishFolder, GlueFileName), true);
 
         foreach (string AssemblyName in AssemblyUtilities.ReadLoadOrder(GlueManifest))
         {
-            CopyIfExists(Path.Combine(GlueSource, AssemblyName + ".dll"), publishFolder);
-            CopyIfExists(Path.Combine(GlueSource, AssemblyName + ".pdb"), publishFolder);
+            CopyRequired(Path.Combine(GlueSource, AssemblyName + ".dll"), publishFolder);
+            string pdb = Path.Combine(GlueSource, AssemblyName + ".pdb");
+            if (File.Exists(pdb)) File.Copy(pdb, Path.Combine(publishFolder, Path.GetFileName(pdb)), true);
         }
     }
 
-    private static void CopyIfExists(string sourceFile, string destFolder)
+    private static void CopyRequired(string sourceFile, string destFolder)
     {
         if (!File.Exists(sourceFile))
-        {
-            return;
-        }
-
+            throw new FileNotFoundException("Required Game glue DLL missing.", sourceFile);
         File.Copy(sourceFile, Path.Combine(destFolder, Path.GetFileName(sourceFile)), true);
     }
 
