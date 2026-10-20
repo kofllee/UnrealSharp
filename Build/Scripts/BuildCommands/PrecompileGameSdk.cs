@@ -47,7 +47,9 @@ public sealed class PrecompileGameSdk : BuildCommand
             $"-p:UEBuildConfig={config}", $"-p:UETargetPlatform={platform}",
             $"-p:PublishDir={sdk}"
         ];
-        BuildSolution.RunBuild(project, config, publish: true, arguments);
+        // Avoid resolving the inherited AutomationTool.CommandUtils.BuildSolution method.
+        global::UnrealSharp.Automation.BuildCommands.BuildSolution.RunBuild(
+            project, config, publish: true, arguments);
         PrecompiledGameSdkUtilities.WriteManifest(sdk, platform, type, config);
         LoggerUtilities.LogUnrealSharpInfo($"Game SDK created: {sdk}");
         return sdk;
