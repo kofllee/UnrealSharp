@@ -10,6 +10,8 @@
 #include "ISettingsModule.h"
 #include "LevelEditor.h"
 #include "SourceCodeNavigation.h"
+#include "ISourceCodeAccessModule.h"
+#include "ISourceCodeAccessor.h"
 #include "SubobjectDataSubsystem.h"
 #include "AssetActions/CSAssetTypeAction_CSBlueprint.h"
 #include "Features/IPluginsEditorFeature.h"
@@ -492,21 +494,35 @@ void FUnrealSharpEditorModule::PackageProject()
 
 void FUnrealSharpEditorModule::OpenSolution()
 {
-	FString SolutionPath = FPaths::ConvertRelativePathToFull(UnrealSharp::Paths::GetPathToManagedSolution());
+	const FString SolutionPath = FPaths::ConvertRelativePathToFull(UnrealSharp::Paths::GetPathToManagedSolution());
 
 	if (!FPaths::FileExists(SolutionPath))
 	{
+		// Regeneration already calls OpenSolution when it succeeds.
 		OnRegenerateSolution();
+		return;
 	}
 
-	FString ExceptionMessage;
-	if (ManagedUnrealSharpEditorCallbacks.OpenSolution(*SolutionPath, &ExceptionMessage))
+	// Respect Editor Preferences > General > Source Code > Source Code Editor.
+	// Rider, Visual Studio, VS Code and third-party IDE integrations register
+	// their own source code accessors with Unreal Engine.
+	ISourceCodeAccessModule& SourceCodeAccess =
+		FModuleManager::LoadModuleChecked<ISourceCodeAccessModule>(TEXT("SourceCodeAccess"));
+	ISourceCodeAccessor& SelectedAccessor = SourceCodeAccess.GetAccessor();
+	if (SelectedAccessor.CanAccessSourceCode() && SelectedAccessor.OpenSolutionAtPath(SolutionPath))
 	{
 		return;
 	}
-	
-	FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(ExceptionMessage), FText::FromString(TEXT("Opening C# Project Failed")));
-};
+
+	const FString Error = FString::Printf(
+		TEXT("Unable to open C# solution with the selected source code editor (%s).\n\n"
+			 "Solution: %s\n\n"
+			 "Choose an installed editor in Editor Preferences > General > Source Code > Source Code Editor."),
+		*SelectedAccessor.GetNameText().ToString(), *SolutionPath);
+	UE_LOGFMT(LogUnrealSharpEditor, Warning, "{0}", Error);
+	FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(Error),
+		FText::FromString(TEXT("Opening C# Solution Failed")));
+}
 
 FString FUnrealSharpEditorModule::SelectArchiveDirectory()
 {
