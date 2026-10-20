@@ -47,9 +47,12 @@ void FUnrealSharpCoreModule::StartupModule()
 			{
 				UE_LOGFMT(LogUnrealSharp, Error, ".NET 10 SDK setup could not be completed.");
 			}
-			// Defer shutdown to the engine rather than terminating the process
-			// while the plugin loader is still on the stack.
-			FPlatformMisc::RequestExit(false);
+			// The Editor is still loading modules. RequestExit(false) attempts a
+			// graceful teardown of subsystems that may not have finished
+			// initializing (for example, ContentBrowserData), which can crash.
+			// The installer has already closed and stopped its child process.
+			// Exit immediately rather than tearing down a half-started Editor.
+			FPlatformMisc::RequestExit(true);
 			return;
 		}
 	}
