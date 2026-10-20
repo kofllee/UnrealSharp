@@ -70,7 +70,8 @@
 		},
         {
             "Name": "PluginBrowser",
-            "Enabled": true
+            "Enabled": true,
+            "TargetAllowList": ["Editor"]
         }
 	],
 	"SupportURL": "https://discord.gg/QHb8VjNptE"

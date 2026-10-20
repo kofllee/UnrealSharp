@@ -21,7 +21,8 @@ public static class BuildUtilities
             new("TargetConfiguration", GeneratorStatics.TargetConfiguration.ToString())
         ];
         
-        UnrealSharpAutomationUtilities.InvokeUnrealSharpAutomation("BuildSolution", actionArgs);
+        if (!UnrealSharpAutomationUtilities.InvokeUnrealSharpAutomation("BuildSolution", actionArgs))
+            throw new IOException("Editor engine bindings compilation failed.");
     }
     
     public static void GenerateUserSolution()
@@ -36,6 +37,7 @@ public static class BuildUtilities
             new("TargetType", GeneratorStatics.TargetType.ToString()),
             new("TargetConfiguration", GeneratorStatics.TargetConfiguration.ToString())
         ];
-        UnrealSharpAutomationUtilities.InvokeUnrealSharpAutomation("GenerateUserSolution", ActionArgs);
+        if (!UnrealSharpAutomationUtilities.InvokeUnrealSharpAutomation("GenerateUserSolution", ActionArgs))
+            throw new IOException("Editor user solution generation failed.");
     }
 }

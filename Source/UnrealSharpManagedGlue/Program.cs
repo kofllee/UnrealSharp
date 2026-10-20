@@ -24,6 +24,7 @@ public static class Program
             
             string assemblyPath = Path.Combine(baseDirectory, $"{assemblyName.Name}.dll");
 
+            if (!File.Exists(assemblyPath)) return null;
             Assembly newAssembly;
             using FileStream assemblyFile = File.Open(assemblyPath, FileMode.Open, FileAccess.Read, FileShare.Read);
             string pdbPath = Path.ChangeExtension(assemblyPath, ".pdb");
@@ -77,6 +78,7 @@ public static class Program
         {
             ConsoleUtilities.Log("Critical failure during export process:");
             ConsoleUtilities.Log(ex.ToString());
+            throw;
         }
     }
 }

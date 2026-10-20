@@ -46,7 +46,8 @@ public class BuildUserGlue : BuildCommand
 
         if (GlueProjectPaths.Count == 0)
         {
-            LoggerUtilities.LogUnrealSharpInfo("No glue projects found. Skipping glue build.");
+            // A BP-only project may have no native, project-specific Game glue.
+            LoggerUtilities.LogUnrealSharpInfo($"No project-specific {targetType} glue projects found.");
             return;
         }
 
@@ -62,7 +63,8 @@ public class BuildUserGlue : BuildCommand
 
     private static void GenerateSolution(BuildCommand command, string solutionDirectory, List<string> glueProjectPaths)
     {
-        if (IsSolutionStampSame(solutionDirectory, glueProjectPaths))
+        if (IsSolutionStampSame(solutionDirectory, glueProjectPaths) &&
+            File.Exists(Path.Combine(solutionDirectory, "UnrealSharpGlue.sln")))
         {
             return;
         }
@@ -81,7 +83,8 @@ public class BuildUserGlue : BuildCommand
         }
         
         LoggerUtilities.LogUnrealSharpInfo($"Generating UnrealSharp user solution at {solutionDirectory}...");
-        CommandUtilities.RunCommand(nameof(BuildCommands.GenerateSolution), command, CommandParams);
+        if (!CommandUtilities.RunCommand(nameof(BuildCommands.GenerateSolution), command, CommandParams))
+            throw new AutomationException("Failed to generate glue solution.");
     }
     
     private static string GetStampPath(string solutionDirectory) => Path.Combine(solutionDirectory, "UnrealSharpSolutionStamp.json");
@@ -103,7 +106,15 @@ public class BuildUserGlue : BuildCommand
             return false;
         }
 
-        return glueProjectPaths.ToList().SequenceEqual(glueProjectPaths);
+        try
+        {
+            string[] saved = GlueProjectsArray.Select(x => x!.GetValue<string>()).ToArray();
+            return saved.SequenceEqual(glueProjectPaths, StringComparer.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+        {
+            return false;
+        }
     }
 
     private static void CreateSolutionStamp(string solutionPath, List<string> glueProjectPaths)
@@ -162,7 +173,8 @@ public class BuildUserGlue : BuildCommand
             }
         }
 
-        CommandUtilities.RunCommand(nameof(BuildEmitLoadOrder), buildCommand, ActionArgs);
+        if (!CommandUtilities.RunCommand(nameof(BuildEmitLoadOrder), buildCommand, ActionArgs))
+            throw new AutomationException("Failed to publish required glue assemblies.");
     }
 
     private static void AddUserProjectReferences(BuildCommand command)

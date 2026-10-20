@@ -18,11 +18,12 @@ public class StageUnrealSharp : BuildCommand
         [
             new("ArchiveDirectory", this.GetProjectRootFolder()),
             new("UEBuildConfig", ParseParamValue("UEBuildConfig", nameof(UnrealTargetConfiguration.Development))),
-            new("UETargetType", ParseParamValue("UETargetType", nameof(TargetType.Editor))),
+            new("UETargetType", ParseParamValue("UETargetType", nameof(TargetType.Game))),
             new("TargetPlatform", ParseParamValue("TargetPlatform", string.Empty)),
             new("TargetArchitecture", ParseParamValue("TargetArchitecture", string.Empty))
         ];
         
-        CommandUtilities.RunCommand(nameof(PackageProject), this, ActionArgs);
+        if (!CommandUtilities.RunCommand(nameof(PackageProject), this, ActionArgs))
+            throw new AutomationException("UnrealSharp Game packaging failed.");
     }
 }

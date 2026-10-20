@@ -83,8 +83,9 @@ public static class ModuleFactory
 			new("AddReferences", "true")
 		};
 
-		UnrealSharpAutomationUtilities.InvokeUnrealSharpAutomation("BuildUserGlue", commandArgs);
-		return true;
+		if (!UnrealSharpAutomationUtilities.InvokeUnrealSharpAutomation("BuildUserGlue", commandArgs))
+            throw new IOException("Editor glue compilation failed.");
+        return true;
 	}
 
 	private static void GenerateModuleProject(ModuleInfo moduleInfo)
@@ -105,7 +106,8 @@ public static class ModuleFactory
 			arguments.Add(new KeyValuePair<string, string>("EditorOnly", "true"));
 		}
 
-		UnrealSharpAutomationUtilities.InvokeUnrealSharpAutomation("GenerateProject", arguments);
+		if (!UnrealSharpAutomationUtilities.InvokeUnrealSharpAutomation("GenerateProject", arguments))
+            throw new IOException($"Cannot generate glue project {moduleInfo.ModuleName}.");
 	}
 
 	private static void AppendExtensionIncludeFolders(ModuleInfo moduleInfo, List<KeyValuePair<string, string>> arguments)
@@ -140,6 +142,7 @@ public static class ModuleFactory
 			}
 		}
 
-		UnrealSharpAutomationUtilities.InvokeUnrealSharpAutomation("UpdateProjectDependencies", arguments);
+		if (!UnrealSharpAutomationUtilities.InvokeUnrealSharpAutomation("UpdateProjectDependencies", arguments))
+            throw new IOException($"Cannot update glue dependencies {moduleInfo.ModuleName}.");
 	}
 }

@@ -11,26 +11,35 @@
   <Import Project="$(UnrealSharpPluginDir)UnrealSharp.AOT.props" Condition="Exists('$(UnrealSharpPluginDir)UnrealSharp.AOT.props')" />
   <Import Project="$(UnrealSharpPluginDir)UnrealSharp.Build.props" Condition="Exists('$(UnrealSharpPluginDir)UnrealSharp.Build.props')" />
 
+  <PropertyGroup>
+    <UETargetPlatform Condition="'$(UETargetPlatform)' == ''">Win64</UETargetPlatform>
+    <UnrealSharpManagedReferenceDirectory>$(UnrealSharpPluginDir)Binaries\Managed\$(TargetFramework)\</UnrealSharpManagedReferenceDirectory>
+    <UnrealSharpManagedReferenceDirectory Condition="'$(UETargetType)' != 'Editor'">$(UnrealSharpPluginDir)Binaries\Managed\Precompiled\$(UETargetPlatform)\$(UETargetType)\$(UEBuildConfig)\$(TargetFramework)\</UnrealSharpManagedReferenceDirectory>
+  </PropertyGroup>
+  <Target Name="ValidateUnrealSharpManagedSdk" BeforeTargets="ResolveReferences" Condition="'$(UETargetType)' != 'Editor'">
+    <Error Condition="!Exists('$(UnrealSharpManagedReferenceDirectory)UnrealSharp.dll')" Text="Missing UnrealSharp Game SDK: $(UnrealSharpManagedReferenceDirectory). Run PrecompileGameSdk." />
+  </Target>
+
   <ItemGroup>
   
     <Reference Include="UnrealSharp">
-      <HintPath>$(UnrealSharpPluginDir)Binaries\Managed\$(TargetFramework)\UnrealSharp.dll</HintPath>
+      <HintPath>$(UnrealSharpManagedReferenceDirectory)UnrealSharp.dll</HintPath>
     </Reference>
 	
 	<Reference Include="UnrealSharp.Binds">
-      <HintPath>$(UnrealSharpPluginDir)Binaries\Managed\$(TargetFramework)\UnrealSharp.Binds.dll</HintPath>
+      <HintPath>$(UnrealSharpManagedReferenceDirectory)UnrealSharp.Binds.dll</HintPath>
     </Reference>
 	
     <Reference Include="UnrealSharp.Core">
-      <HintPath>$(UnrealSharpPluginDir)Binaries\Managed\$(TargetFramework)\UnrealSharp.Core.dll</HintPath>
+      <HintPath>$(UnrealSharpManagedReferenceDirectory)UnrealSharp.Core.dll</HintPath>
     </Reference>
 	
     <Reference Include="UnrealSharp.Log">
-      <HintPath>$(UnrealSharpPluginDir)Binaries\Managed\$(TargetFramework)\UnrealSharp.Log.dll</HintPath>
+      <HintPath>$(UnrealSharpManagedReferenceDirectory)UnrealSharp.Log.dll</HintPath>
     </Reference>
 
     <Reference Include="UnrealSharp.Plugins">
-      <HintPath>$(UnrealSharpPluginDir)Binaries\Managed\$(TargetFramework)\UnrealSharp.Plugins.dll</HintPath>
+      <HintPath>$(UnrealSharpManagedReferenceDirectory)UnrealSharp.Plugins.dll</HintPath>
     </Reference>
     
   </ItemGroup>

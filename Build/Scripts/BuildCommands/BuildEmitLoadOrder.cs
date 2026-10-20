@@ -40,7 +40,7 @@ public class BuildEmitLoadOrder : BuildCommand
 
         BuildCommands.BuildSolution.RunBuild(SolutionPath, TargetConfiguration, publish: true, BuildArguments);
         
-        EmitLoadOrder(Projects, LoadOrderName, OutputPath, Options);
+        LoadOrderUtilities.TryEmitLoadOrder(Projects, OutputPath, LoadOrderName, Options, requireAllAssemblies: true);
         if (LoadOrderName == LoadOrderUtilities.UserLoadOrderName)
         {
             AddLaunchSettings(this, Projects);

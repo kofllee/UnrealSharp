@@ -51,6 +51,13 @@ public static class PathUtilities
         return Path.Combine(rootDirectory, "Binaries", "Managed", DotNetUtilities.Version);
     }
     
+    public static string GameSdkOutputPath(string pluginRoot, UnrealTargetPlatform platform,
+        TargetType target, UnrealTargetConfiguration configuration)
+    {
+        return Path.Combine(pluginRoot, "Binaries", "Managed", "Precompiled",
+            platform.ToString(), target.ToString(), configuration.ToString(), DotNetUtilities.Version);
+    }
+
     public static string GetUnrealSharpSharedPropsPath(this BuildCommand buildCommand)
     {
         string UnrealSharpRootFolder = GetUnrealSharpRootFolder(buildCommand);
