@@ -6,6 +6,8 @@ public class UnrealSharpCore : ModuleRules
 	public UnrealSharpCore(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+        // Native Runtime modules must have UnrealGame manifests in installed BP plugins.
+        PrecompileForTargets = PrecompileTargetsType.Any;
 		
 		PublicDefinitions.Add("PLUGIN_PATH=" + PluginDirectory.Replace("\\","/"));
 		PublicDefinitions.Add("TARGET_TYPE=" + (int)Target.Type);
