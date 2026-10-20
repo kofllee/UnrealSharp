@@ -14,6 +14,7 @@
 #include "Widgets/SWindow.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SBorder.h"
+#include "Widgets/Layout/SBox.h"
 #include "Widgets/Notifications/SProgressBar.h"
 #include "Widgets/Text/STextBlock.h"
 
@@ -36,13 +37,13 @@ $ErrorActionPreference = 'Stop'
 function Stage([string]$Message) { Set-Content -LiteralPath $StatusFile -Value $Message -Encoding UTF8 }
 $installer = Join-Path $env:TEMP ('UnrealSharp-dotnet-' + [guid]::NewGuid().ToString('N') + '.ps1')
 try {
-    Stage 'Downloading the Microsoft installer...'
+    Stage 'DOWNLOAD|Downloading the Microsoft installer...'
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     Invoke-WebRequest -UseBasicParsing -Uri 'https://dot.net/v1/dotnet-install.ps1' -OutFile $installer
     $root = Join-Path $env:LOCALAPPDATA 'Microsoft\dotnet'
-    Stage 'Installing .NET 10 SDK and Runtime...'
+    Stage 'INSTALL|Installing .NET 10 SDK and Runtime...'
     & $installer -Channel 10.0 -InstallDir $root -NoPath
-    Stage 'Verifying .NET 10 SDK and Runtime...'
+    Stage 'VERIFY|Verifying .NET 10 SDK and Runtime...'
     $sdk = @(Get-ChildItem (Join-Path $root 'sdk') -Directory -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -match '^10\.\d+\.\d+$' -and [version]$_.Name -ge [version]'10.0.201' -and
             (Test-Path (Join-Path $_.FullName 'MSBuild.dll')) }).Count -gt 0
@@ -53,9 +54,9 @@ try {
         Where-Object { $_.Name -match '^10\.\d+\.\d+$' -and
             (Test-Path (Join-Path $_.FullName 'hostfxr.dll')) }).Count -gt 0
     if (-not ($sdk -and $runtime -and $fxr)) { throw 'A complete .NET 10 SDK installation was not found.' }
-    Stage 'Installation successful. Continuing Unreal Editor startup...'
+    Stage 'SUCCESS|Installation successful. Continuing Unreal Editor startup...'
 } catch {
-    Stage ('Installation failed: ' + $_.Exception.Message)
+    Stage ('FAILURE|Installation failed: ' + $_.Exception.Message)
     exit 1
 } finally {
     Remove-Item -LiteralPath $installer -Force -ErrorAction SilentlyContinue
@@ -68,12 +69,12 @@ status_file="$1"
 root="$HOME/.dotnet"
 installer="$(mktemp)"
 trap 'rm -f "$installer"' EXIT
-trap 'printf "%s\n" "Installation failed. Check your internet connection and retry." > "$status_file"' ERR
-printf "%s\n" "Downloading the Microsoft installer..." > "$status_file"
+trap 'printf "%s\n" "FAILURE|Installation failed. Check your internet connection and retry." > "$status_file"' ERR
+printf "%s\n" "DOWNLOAD|Downloading the Microsoft installer..." > "$status_file"
 curl --fail --location --silent --show-error https://dot.net/v1/dotnet-install.sh -o "$installer"
-printf "%s\n" "Installing .NET 10 SDK and Runtime..." > "$status_file"
+printf "%s\n" "INSTALL|Installing .NET 10 SDK and Runtime..." > "$status_file"
 bash "$installer" --channel 10.0 --install-dir "$root" --no-path
-printf "%s\n" "Verifying .NET 10 SDK and Runtime..." > "$status_file"
+printf "%s\n" "VERIFY|Verifying .NET 10 SDK and Runtime..." > "$status_file"
 sdk_ok=false
 runtime_ok=false
 fxr_ok=false
@@ -87,10 +88,10 @@ for fxr in "$root"/host/fxr/10.*; do
     if [[ -f "$fxr/libhostfxr.dylib" || -f "$fxr/libhostfxr.so" ]]; then fxr_ok=true; break; fi
 done
 if [[ "$sdk_ok" != true || "$runtime_ok" != true || "$fxr_ok" != true ]]; then
-    printf "%s\n" "Installation failed: SDK or Runtime is incomplete." > "$status_file"
+    printf "%s\n" "FAILURE|Installation failed: SDK or Runtime is incomplete." > "$status_file"
     exit 1
 fi
-printf "%s\n" "Installation successful. Continuing Unreal Editor startup..." > "$status_file"
+printf "%s\n" "SUCCESS|Installation successful. Continuing Unreal Editor startup..." > "$status_file"
 )SH");
 #else
 	return FString();
@@ -109,6 +110,16 @@ static void ActivateSdk()
 	FPlatformMisc::SetEnvironmentVar(TEXT("PATH"), *NewPath);
 }
 
+enum class EInstallPhase : uint8
+{
+	Ready,
+	Downloading,
+	Installing,
+	Verifying,
+	Failed,
+	Completed
+};
+
 class SInstallSdk final : public SCompoundWidget
 {
 public:
@@ -119,9 +130,16 @@ public:
 		Status = FText::FromString(TEXT("The .NET 10 SDK and Runtime are required by UnrealSharp."));
 		ChildSlot
 		[
-			SNew(SBorder).Padding(18)
+			SNew(SBox).WidthOverride(490.0f)
 			[
+				SNew(SBorder).Padding(18)
+				[
 				SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)
+				[
+					SNew(STextBlock)
+					.Text(FText::FromString(TEXT("UnrealSharp - .NET 10 SDK Setup")))
+				]
 				+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 14)
 				[
 					SNew(STextBlock)
@@ -143,14 +161,17 @@ public:
 					+ SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 8, 0)
 					[
 						SNew(SButton).Text(FText::FromString(TEXT("Cancel")))
+						.Visibility(this, &SInstallSdk::GetCancelVisibility)
 						.OnClicked(this, &SInstallSdk::Cancel)
 					]
 					+ SHorizontalBox::Slot().AutoWidth()
 					[
-						SNew(SButton).Text(FText::FromString(TEXT("Install")))
+						SNew(SButton).Text(this, &SInstallSdk::GetInstallButtonText)
+						.Visibility(this, &SInstallSdk::GetInstallVisibility)
 						.IsEnabled(this, &SInstallSdk::CanInstall)
 						.OnClicked(this, &SInstallSdk::Install)
 					]
+				]
 				]
 			]
 		];
@@ -166,7 +187,32 @@ public:
 private:
 	FText GetStatus() const { return Status; }
 	EVisibility GetProgressVisibility() const { return bInstalling ? EVisibility::Visible : EVisibility::Collapsed; }
-	bool CanInstall() const { return !bInstalling; }
+	EVisibility GetCancelVisibility() const
+	{
+		return (!bSucceeded && (!bInstalling || Phase == EInstallPhase::Downloading))
+			? EVisibility::Visible : EVisibility::Collapsed;
+	}
+	EVisibility GetInstallVisibility() const { return bInstalling || bSucceeded ? EVisibility::Collapsed : EVisibility::Visible; }
+	FText GetInstallButtonText() const { return FText::FromString(Phase == EInstallPhase::Failed ? TEXT("Retry") : TEXT("Install")); }
+	bool CanInstall() const { return !bInstalling && !bSucceeded; }
+
+	// Stage is produced by the child script. Read it when cancelling too,
+	// so a click queued just as installation starts cannot interrupt extraction.
+	void RefreshStage()
+	{
+		FString Text;
+		if (!FFileHelper::LoadFileToString(Text, *StatusPath)) { return; }
+		Text = Text.TrimStartAndEnd();
+		FString Code;
+		FString Message;
+		if (!Text.Split(TEXT("|"), &Code, &Message)) { return; }
+		if (Code == TEXT("DOWNLOAD")) { Phase = EInstallPhase::Downloading; }
+		else if (Code == TEXT("INSTALL")) { Phase = EInstallPhase::Installing; }
+		else if (Code == TEXT("VERIFY")) { Phase = EInstallPhase::Verifying; }
+		else if (Code == TEXT("FAILURE")) { Phase = EInstallPhase::Failed; }
+		else if (Code == TEXT("SUCCESS")) { Phase = EInstallPhase::Completed; }
+		if (!Message.IsEmpty()) { Status = FText::FromString(Message); }
+	}
 	void Cleanup()
 	{
 		if (!ScriptPath.IsEmpty()) { IFileManager::Get().Delete(*ScriptPath); ScriptPath.Empty(); }
@@ -186,9 +232,11 @@ private:
 		if (bInstalling) { return FReply::Handled(); }
 		CloseProcess();
 		Cleanup();
+		Phase = EInstallPhase::Downloading;
 		const FString Source = Script();
 		if (Source.IsEmpty())
 		{
+			Phase = EInstallPhase::Failed;
 			Status = FText::FromString(TEXT("Automatic installation is not supported on this platform."));
 			return FReply::Handled();
 		}
@@ -204,6 +252,7 @@ private:
 		StatusPath = ScriptPath + TEXT(".status");
 		if (!FFileHelper::SaveStringToFile(Source, *ScriptPath))
 		{
+			Phase = EInstallPhase::Failed;
 			Status = FText::FromString(TEXT("Unable to prepare the installer."));
 			Cleanup();
 			return FReply::Handled();
@@ -217,7 +266,8 @@ private:
 			nullptr, 0, nullptr, nullptr);
 		if (!Process.IsValid())
 		{
-			Status = FText::FromString(TEXT("Unable to start the installer. Click Install to retry."));
+			Phase = EInstallPhase::Failed;
+			Status = FText::FromString(TEXT("Unable to start the installer. Click Retry to try again."));
 			Cleanup();
 			return FReply::Handled();
 		}
@@ -229,11 +279,7 @@ private:
 	EActiveTimerReturnType Poll(double, float)
 	{
 		if (!bInstalling) { return EActiveTimerReturnType::Stop; }
-		FString Stage;
-		if (FFileHelper::LoadFileToString(Stage, *StatusPath) && !Stage.TrimStartAndEnd().IsEmpty())
-		{
-			Status = FText::FromString(Stage.TrimStartAndEnd());
-		}
+		RefreshStage();
 		if (FPlatformProcess::IsProcRunning(Process)) { return EActiveTimerReturnType::Continue; }
 		int32 Code = -1;
 		const bool bGotCode = FPlatformProcess::GetProcReturnCode(Process, &Code);
@@ -247,21 +293,30 @@ private:
 			if (UnrealSharp::InstallationUtilities::IsDotNetSdkInstalled())
 			{
 				bSucceeded = true;
+				Phase = EInstallPhase::Completed;
 				UE_LOGFMT(LogUnrealSharp, Display, ".NET 10 SDK installation successful. Resuming current Editor startup.");
 				if (const TSharedPtr<SWindow> Dialog = Window.Pin()) { Dialog->RequestDestroyWindow(); }
 				return EActiveTimerReturnType::Stop;
 			}
-			Status = FText::FromString(TEXT("SDK installation finished but verification failed. Click Install to retry."));
+			Phase = EInstallPhase::Failed;
+			Status = FText::FromString(TEXT("SDK installation finished but verification failed. Click Retry."));
 		}
 		else
 		{
+			Phase = EInstallPhase::Failed;
 			Status = FText::FromString(FString::Printf(
-				TEXT("Installation failed (exit code %d). Click Install to retry."), Code));
+				TEXT("Installation failed (exit code %d). Click Retry or Cancel."), Code));
 		}
 		return EActiveTimerReturnType::Stop;
 	}
 	FReply Cancel()
 	{
+		RefreshStage();
+		if (bSucceeded || (bInstalling && Phase != EInstallPhase::Downloading))
+		{
+			// Files may already be installing; do not terminate the installer.
+			return FReply::Handled();
+		}
 		CloseProcess();
 		bInstalling = false;
 		Cleanup();
@@ -276,6 +331,7 @@ private:
 	FProcHandle Process;
 	bool bInstalling = false;
 	bool bSucceeded = false;
+	EInstallPhase Phase = EInstallPhase::Ready;
 };
 
 bool InstallSdkDuringStartup()
@@ -287,7 +343,8 @@ bool InstallSdkDuringStartup()
 	}
 	const TSharedRef<SWindow> Dialog = SNew(SWindow)
 		.Title(FText::FromString(TEXT("UnrealSharp - Install .NET 10 SDK")))
-		.ClientSize(FVector2D(510, 235))
+		.SizingRule(ESizingRule::Autosized)
+		.CreateTitleBar(false) // No system Close button to bypass safe-stage cancellation.
 		.SupportsMinimize(false)
 		.SupportsMaximize(false);
 	const TSharedRef<SInstallSdk> Installer = SNew(SInstallSdk);
