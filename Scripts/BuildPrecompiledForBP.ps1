@@ -59,6 +59,10 @@ New-Item -Path $ManagedDest -ItemType Directory -Force | Out-Null
 Copy-Item -Path (Join-Path $PluginDirectory "Binaries\Managed\*") -Destination $ManagedDest -Recurse -Force
 Require-File (Join-Path $ManagedDest "net10.0\UnrealSharp.Plugins.dll")
 Require-File (Join-Path $OutputDirectory "UnrealSharp.Shared.props")
+$Descriptor = Get-Content -LiteralPath (Join-Path $OutputDirectory "UnrealSharp.uplugin") -Raw | ConvertFrom-Json
+if (-not $Descriptor.Installed) {
+    throw "BuildPlugin distribution is not marked as Installed. Refusing a non-precompiled BP release."
+}
 Require-File (Join-Path $OutputDirectory "Managed\global.json")
 Require-File (Join-Path $OutputDirectory "Build\Scripts\UnrealSharp.Automation.csproj")
 foreach ($Config in $Configurations) {
