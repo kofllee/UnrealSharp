@@ -1,17 +1,28 @@
 <Project>
     <PropertyGroup>
         <UE5RulesProjPath>$(EngineDir)\Intermediate\Build\BuildRulesProjects\UE5Rules\UE5Rules.csproj</UE5RulesProjPath>
+        <UnrealEngineVersionFile>$(EngineDir)\Build\Build.version</UnrealEngineVersionFile>
     </PropertyGroup>
-
     <PropertyGroup Condition="Exists('$(UE5RulesProjPath)')">
         <UE5RulesContent>$([System.IO.File]::ReadAllText('$(UE5RulesProjPath)'))</UE5RulesContent>
         <UE5Rules_DefineConstants>$([System.Text.RegularExpressions.Regex]::Match($(UE5RulesContent), '&lt;DefineConstants&gt;(?&lt;content&gt;.*?)&lt;/DefineConstants&gt;').Groups['content'].Value)</UE5Rules_DefineConstants>
         <UE5Rules_DefineConstants>$([System.Text.RegularExpressions.Regex]::Replace($(UE5Rules_DefineConstants), '\s+', ''))</UE5Rules_DefineConstants>
     </PropertyGroup>
-
-    <PropertyGroup>
-        <TargetFramework>net8.0</TargetFramework>
-        <TargetFramework Condition="$(UE5Rules_DefineConstants.Contains('UE_5_8_OR_LATER'))">net10.0</TargetFramework>
+    <!-- Installed UE builds have Build.version before UE5Rules is generated. -->
+    <PropertyGroup Condition="Exists('$(UnrealEngineVersionFile)')">
+        <UnrealEngineVersionContent>$([System.IO.File]::ReadAllText('$(UnrealEngineVersionFile)'))</UnrealEngineVersionContent>
+        <UnrealEngineMajorVersion>$([System.Text.RegularExpressions.Regex]::Match($(UnrealEngineVersionContent), '&quot;MajorVersion&quot;\s*:\s*(\d+)').Groups[1].Value)</UnrealEngineMajorVersion>
+        <UnrealEngineMinorVersion>$([System.Text.RegularExpressions.Regex]::Match($(UnrealEngineVersionContent), '&quot;MinorVersion&quot;\s*:\s*(\d+)').Groups[1].Value)</UnrealEngineMinorVersion>
     </PropertyGroup>
-    
+    <PropertyGroup>
+        <IsUE57OrLater Condition="'$(UnrealEngineMajorVersion)' == '5' And '$(UnrealEngineMinorVersion)' != ''">$([MSBuild]::VersionGreaterThanOrEquals('$(UnrealEngineMinorVersion)', '7'))</IsUE57OrLater>
+        <IsUE58OrLater Condition="'$(UnrealEngineMajorVersion)' == '5' And '$(UnrealEngineMinorVersion)' != ''">$([MSBuild]::VersionGreaterThanOrEquals('$(UnrealEngineMinorVersion)', '8'))</IsUE58OrLater>
+        <IsUE57OrLater Condition="'$(IsUE57OrLater)' == '' And $([System.String]::Copy('$(UE5Rules_DefineConstants)').Contains('UE_5_7_OR_LATER'))">true</IsUE57OrLater>
+        <IsUE58OrLater Condition="'$(IsUE58OrLater)' == '' And $([System.String]::Copy('$(UE5Rules_DefineConstants)').Contains('UE_5_8_OR_LATER'))">true</IsUE58OrLater>
+        <IsUE57OrLater Condition="'$(IsUE57OrLater)' == '' And '$(IsUE58OrLater)' == 'true'">true</IsUE57OrLater>
+        <TargetFramework>net8.0</TargetFramework>
+        <TargetFramework Condition="'$(IsUE58OrLater)' == 'true'">net10.0</TargetFramework>
+        <DefineConstants Condition="'$(IsUE57OrLater)' == 'true'">$(DefineConstants);UE_5_7_OR_LATER</DefineConstants>
+        <DefineConstants Condition="'$(IsUE58OrLater)' == 'true'">$(DefineConstants);UE_5_8_OR_LATER</DefineConstants>
+    </PropertyGroup>
 </Project>

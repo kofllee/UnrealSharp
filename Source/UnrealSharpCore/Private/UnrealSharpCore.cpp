@@ -2,6 +2,10 @@
 #include "CoreMinimal.h"
 #include "CSManager.h"
 #include "CSDotnetUtilties.h"
+#include "CSInstallationUtilities.h"
+#include "DotNet/CSDotNetInstaller.h"
+#include "Misc/App.h"
+#include "Logging/StructuredLog.h"
 #include "Properties/CSPropertyGeneratorManager.h"
 #include "Modules/ModuleManager.h"
 
@@ -21,9 +25,21 @@ DEFINE_LOG_CATEGORY(LogUnrealSharp);
 void FUnrealSharpCoreModule::StartupModule()
 {
 #if WITH_EDITOR
-	if (!UnrealSharp::DotNetUtilities::VerifyCSharpEnvironment() || !UnrealSharp::DotNetUtilities::BuildUserSolution())
+	// Keep the same Editor process paused during plugin loading. The modal
+	// installer closes before the CLR and the managed bindings are initialized.
+	if (!UnrealSharp::InstallationUtilities::IsDotNetSdkInstalled())
 	{
-		StartupModule();
+		if (FApp::IsUnattended() || !UnrealSharp::DotNetInstaller::InstallSdkDuringStartup())
+		{
+			UE_LOGFMT(LogUnrealSharp, Error, ".NET 10 SDK installation failed or was cancelled.");
+			if (!FApp::IsUnattended()) { FPlatformMisc::RequestExit(false); }
+			return;
+		}
+	}
+	if (!UnrealSharp::DotNetUtilities::VerifyCSharpEnvironment() ||
+		!UnrealSharp::DotNetUtilities::BuildUserSolution())
+	{
+		UE_LOGFMT(LogUnrealSharp, Error, "C# environment verification or compilation failed.");
 		return;
 	}
 #endif

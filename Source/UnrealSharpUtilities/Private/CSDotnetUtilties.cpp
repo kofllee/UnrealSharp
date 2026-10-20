@@ -8,6 +8,7 @@
 #include "UnrealSharpUtils.h"
 #include "HAL/FileManager.h"
 #include "Misc/FileHelper.h"
+#include "HAL/FileManager.h"
 
 static TAutoConsoleVariable<int32> CVarSimulateNoDotNetSDK(
 	TEXT("UnrealSharp.SimulateNoDotNetSDK"),
@@ -39,59 +40,66 @@ const TCHAR* UnrealSharp::DotNetUtilities::GetCoreClrLibraryName()
 
 FString UnrealSharp::DotNetUtilities::GetDotNetDirectory()
 {
-#if WITH_EDITOR
-	if (CVarSimulateNoDotNetSDK.GetValueOnAnyThread() == 1)
-	{
-		return FString();
-	}
-#endif
-
-#if defined(__APPLE__)
-	constexpr const TCHAR* DefaultDotNetPath = TEXT("/usr/local/share/dotnet/");
-	if (FPaths::DirectoryExists(DefaultDotNetPath))
-	{
-		return DefaultDotNetPath;
-	}
-#endif
-
-	const FString PathVariable = FPlatformMisc::GetEnvironmentVariable(TEXT("PATH"));
-
-	TArray<FString> Paths;
-	PathVariable.ParseIntoArray(Paths, FPlatformMisc::GetPathVarDelimiter());
-
-#if defined(_WIN32)
-	const FString PathMarker = TEXT("Program Files\\dotnet\\");
+#if PLATFORM_WINDOWS
+	const TCHAR* Executable = TEXT("dotnet.exe");
 #else
-	const FString PathMarker = TEXT("dotnet");
+	const TCHAR* Executable = TEXT("dotnet");
 #endif
-
-	FString DotNetPathFromEnv;
-	for (const FString& Path : Paths)
+	TArray<FString> Roots;
+	Roots.Add(FPlatformMisc::GetEnvironmentVariable(TEXT("DOTNET_ROOT")));
+#if PLATFORM_WINDOWS
+	Roots.Add(FPlatformMisc::GetEnvironmentVariable(TEXT("DOTNET_ROOT_X64")));
+#endif
+	FPlatformMisc::GetEnvironmentVariable(TEXT("PATH")).ParseIntoArray(
+		Roots, FPlatformMisc::GetPathVarDelimiter());
+#if PLATFORM_WINDOWS
+	Roots.Add(FPaths::Combine(FPlatformMisc::GetEnvironmentVariable(TEXT("ProgramFiles")), TEXT("dotnet")));
+	Roots.Add(FPaths::Combine(FPlatformMisc::GetEnvironmentVariable(TEXT("LOCALAPPDATA")), TEXT("Microsoft"), TEXT("dotnet")));
+#elif PLATFORM_MAC
+	Roots.Add(TEXT("/usr/local/share/dotnet"));
+	Roots.Add(TEXT("/opt/homebrew/opt/dotnet/libexec"));
+	Roots.Add(FPaths::Combine(FPlatformMisc::GetEnvironmentVariable(TEXT("HOME")), TEXT(".dotnet")));
+#else
+	Roots.Add(TEXT("/usr/share/dotnet"));
+	Roots.Add(TEXT("/usr/local/share/dotnet"));
+	Roots.Add(FPaths::Combine(FPlatformMisc::GetEnvironmentVariable(TEXT("HOME")), TEXT(".dotnet")));
+#endif
+	FString RuntimeFallback;
+	for (const FString& Candidate : Roots)
 	{
-		if (!Path.Contains(PathMarker))
+		const FString Root = Candidate.TrimStartAndEnd();
+		if (Root.IsEmpty() || !FPaths::FileExists(FPaths::Combine(Root, Executable)))
 		{
 			continue;
 		}
-
-		if (!FPaths::DirectoryExists(Path))
+		const FString Normalized = Root.Replace(TEXT("\\"), TEXT("/"));
+		if (Normalized.Contains(TEXT("/Binaries/ThirdParty/DotNet/"), ESearchCase::IgnoreCase))
 		{
-			UE_LOGFMT(LogUnrealSharpUtilities, Warning, "Found path to DotNet, but the directory doesn't exist: {0}", Path);
-			break;
+			continue;
 		}
-
-		DotNetPathFromEnv = Path;
-		break;
+		if (RuntimeFallback.IsEmpty()) { RuntimeFallback = Root; }
+		TArray<FString> SdkVersions;
+		IFileManager::Get().FindFiles(SdkVersions,
+			*FPaths::Combine(Root, TEXT("sdk"), TEXT("10.*")), false, true);
+		for (const FString& Version : SdkVersions)
+		{
+			if (Version.StartsWith(TEXT("10.")) &&
+				IsVersionGreaterOrEqual(Version, TEXT("10.0.201")) &&
+				FPaths::FileExists(FPaths::Combine(Root, TEXT("sdk"), Version, TEXT("MSBuild.dll"))))
+			{
+				return Root;
+			}
+		}
 	}
-
-	return DotNetPathFromEnv;
+	return RuntimeFallback;
 }
 
 FString UnrealSharp::DotNetUtilities::GetDotNetExecutablePath()
 {
 #if defined(_WIN32)
-	return GetDotNetDirectory() + TEXT("dotnet.exe");
+	return FPaths::Combine(GetDotNetDirectory(), TEXT("dotnet.exe"));
 #else
-	return GetDotNetDirectory() + TEXT("dotnet");
+	return FPaths::Combine(GetDotNetDirectory(), TEXT("dotnet"));
 #endif
 }
 
@@ -170,7 +178,7 @@ bool UnrealSharp::DotNetUtilities::IsSelfContainedRuntimeConfig(const FString& R
 bool UnrealSharp::DotNetUtilities::VerifyCSharpEnvironment()
 {
 	FString DotNetInstallationPath = GetDotNetDirectory();
-	if (DotNetInstallationPath.IsEmpty() && !InstallationUtilities::IsUnrealSharpInstalled())
+	if (!InstallationUtilities::IsDotNetSdkInstalled())
 	{
 		FString DialogText = FString::Printf(TEXT("UnrealSharp can't be initialized. An installation of .NET %s SDK can't be found on your system."), TEXT(DOTNET_MAJOR_VERSION));
 		FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(DialogText));
