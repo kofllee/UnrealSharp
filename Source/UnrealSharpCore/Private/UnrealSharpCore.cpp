@@ -56,6 +56,20 @@ void FUnrealSharpCoreModule::StartupModule()
 			return;
 		}
 	}
+	// Pin the SDK resolved by native code for every managed build subprocess,
+	// including UAT scripts started later in this Editor session.
+	const FString SdkRoot = UnrealSharp::DotNetUtilities::GetDotNetDirectory();
+	if (SdkRoot.IsEmpty())
+	{
+		UE_LOGFMT(LogUnrealSharp, Error, "Unable to resolve a compatible .NET 10 SDK after setup.");
+		return;
+	}
+	FPlatformMisc::SetEnvironmentVar(TEXT("UNREALSHARP_DOTNET_ROOT"), *SdkRoot);
+	FPlatformMisc::SetEnvironmentVar(TEXT("DOTNET_ROOT"), *SdkRoot);
+#if PLATFORM_WINDOWS
+	FPlatformMisc::SetEnvironmentVar(TEXT("DOTNET_ROOT_X64"), *SdkRoot);
+#endif
+	UE_LOGFMT(LogUnrealSharp, Display, "Using .NET 10 SDK at: {0}", SdkRoot);
 	if (!UnrealSharp::DotNetUtilities::VerifyCSharpEnvironment() ||
 		!UnrealSharp::DotNetUtilities::BuildUserSolution())
 	{

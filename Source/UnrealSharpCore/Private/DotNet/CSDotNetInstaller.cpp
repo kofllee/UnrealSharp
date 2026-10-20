@@ -47,7 +47,8 @@ try {
     Stage 'VERIFY|Verifying .NET 10 SDK and Runtime...'
     $sdk = @(Get-ChildItem (Join-Path $root 'sdk') -Directory -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -match '^10\.\d+\.\d+$' -and [version]$_.Name -ge [version]'10.0.201' -and
-            (Test-Path (Join-Path $_.FullName 'MSBuild.dll')) }).Count -gt 0
+            (Test-Path (Join-Path $_.FullName 'MSBuild.dll')) -and
+            (Test-Path (Join-Path $_.FullName 'dotnet.dll')) }).Count -gt 0
     $runtime = @(Get-ChildItem (Join-Path $root 'shared\Microsoft.NETCore.App') -Directory -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -match '^10\.\d+\.\d+$' -and
             (Test-Path (Join-Path $_.FullName 'coreclr.dll')) }).Count -gt 0
@@ -80,7 +81,13 @@ sdk_ok=false
 runtime_ok=false
 fxr_ok=false
 for sdk in "$root"/sdk/10.*; do
-    if [[ -f "$sdk/MSBuild.dll" ]]; then sdk_ok=true; break; fi
+    version="${sdk##*/}"
+    if [[ "$version" =~ ^10\.0\.([0-9]+)$ ]] &&
+       (( 10#${BASH_REMATCH[1]} >= 201 )) &&
+       [[ -f "$sdk/MSBuild.dll" && -f "$sdk/dotnet.dll" ]]; then
+        sdk_ok=true
+        break
+    fi
 done
 for framework in "$root"/shared/Microsoft.NETCore.App/10.*; do
     if [[ -f "$framework/libcoreclr.dylib" || -f "$framework/libcoreclr.so" ]]; then runtime_ok=true; break; fi
@@ -102,6 +109,7 @@ printf "%s\n" "SUCCESS|Installation successful. Continuing Unreal Editor startup
 static void ActivateSdk()
 {
 	const FString Root = PerUserDotNet();
+	FPlatformMisc::SetEnvironmentVar(TEXT("UNREALSHARP_DOTNET_ROOT"), *Root);
 	FPlatformMisc::SetEnvironmentVar(TEXT("DOTNET_ROOT"), *Root);
 #if PLATFORM_WINDOWS
 	FPlatformMisc::SetEnvironmentVar(TEXT("DOTNET_ROOT_X64"), *Root);

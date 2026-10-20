@@ -97,6 +97,9 @@ FCSDotNetLayout FCSDotNetRuntimeHost::ResolveDotNetLayout(const FString& PluginA
 	Layout.AppAssemblyPath = PluginAssemblyPath;
 	Layout.RuntimeConfigPath = DotNetUtilities::GetRuntimeConfigPath(PluginAssemblyPath);
 
+#if !WITH_EDITOR
+	// Packaged games can be self-contained, while the Editor must use the
+	// pinned SDK root for native hosting and managed build tools alike.
 	if (DotNetUtilities::IsSelfContainedDirectory(RuntimeDirectory))
 	{
 		Layout.DotNetRoot = RuntimeDirectory;
@@ -104,14 +107,21 @@ FCSDotNetLayout FCSDotNetRuntimeHost::ResolveDotNetLayout(const FString& PluginA
 		Layout.bSelfContained = true;
 		return Layout;
 	}
+#endif
 
 	Layout.bSelfContained = false;
 
 	TArray<FString> CandidateRoots;
+#if WITH_EDITOR
+	// Editor hosting must use the *same* SDK root as UnrealSharp.Automation.
+	// Never load an unrelated bundled hostfxr when managed builds are pinned.
+	CandidateRoots.Add(DotNetUtilities::GetDotNetDirectory());
+#else
 	CandidateRoots.Add(FPaths::Combine(RuntimeDirectory, TEXT(DOTNET_BUNDLED_FOLDER_NAME)));
 	CandidateRoots.Add(FPaths::Combine(RuntimeDirectory, TEXT(".."), TEXT(DOTNET_BUNDLED_FOLDER_NAME)));
 	CandidateRoots.Add(FPaths::Combine(FPaths::GetPath(FPlatformProcess::ExecutablePath()), TEXT(DOTNET_BUNDLED_FOLDER_NAME)));
 	CandidateRoots.Add(DotNetUtilities::GetDotNetDirectory());
+#endif
 
 	for (FString& CandidateRoot : CandidateRoots)
 	{

@@ -1,231 +1,194 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 
 namespace UnrealSharp.Automation.Utilities;
 
 public struct DotnetVersionInfo
 {
-	public string VersionName;
-	public Version LatestVersion;
+    public string VersionName;
+    public Version LatestVersion;
 }
 
 public static class DotNetUtilities
 {
-	private const int DotnetMajorVersion = 10;
+    private const int DotnetMajorVersion = 10;
+    private static readonly Version MinimumSdkVersion = new(10, 0, 201);
 
-	private static string? _cachedExecutable;
-	private static string? _cachedSdkPath;
+    public static string Version => $"net{DotnetMajorVersion}.0";
+    public static string DotnetFolder => ResolveDotNetRoot();
 
-	public static string Version => $"net{DotnetMajorVersion}.0";
-	
-	public static string DotnetFolder => Path.GetDirectoryName(DotNetExecutable)!;
+    public static string HostFxrFilename =>
+        OperatingSystem.IsWindows() ? "hostfxr.dll" :
+        OperatingSystem.IsMacOS() ? "libhostfxr.dylib" :
+        OperatingSystem.IsLinux() ? "libhostfxr.so" :
+        throw new PlatformNotSupportedException("Unsupported platform");
 
-	public static string HostFxrFilename
-	{
-		get
-		{
-			if (OperatingSystem.IsWindows())
-			{
-				return "hostfxr.dll";
-			}
+    private static string CoreClrFilename =>
+        OperatingSystem.IsWindows() ? "coreclr.dll" :
+        OperatingSystem.IsMacOS() ? "libcoreclr.dylib" :
+        OperatingSystem.IsLinux() ? "libcoreclr.so" :
+        throw new PlatformNotSupportedException("Unsupported platform");
 
-			if (OperatingSystem.IsMacOS())
-			{
-				return "libhostfxr.dylib";
-			}
+    private static string DotNetExeName => OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet";
 
-			if (OperatingSystem.IsLinux())
-			{
-				return "libhostfxr.so";
-			}
+    public static string DotNetExecutable => Path.Combine(DotnetFolder, DotNetExeName);
+    public static string DotNetSdkDirectory => Path.Combine(DotnetFolder, "sdk");
+    public static string LatestDotNetSdkPath =>
+        Path.Combine(DotNetSdkDirectory, LatestDotNetSdkVersionInfo.VersionName);
+    public static DotnetVersionInfo LatestDotNetSdkVersionInfo =>
+        ParseLatestDotnetVersionsInDirectory(DotNetSdkDirectory, MinimumSdkVersion, "MSBuild.dll", "dotnet.dll");
 
-			throw new PlatformNotSupportedException("Unsupported platform");
-		}
-	}
-	
-	public static string DotNetExecutable
-	{
-		get
-		{
-			if (_cachedExecutable != null)
-			{
-				return _cachedExecutable;
-			}
+    // Keep this ordering identical to native CSDotnetUtilties.cpp. A pinned root
+    // from the Editor has priority and is never silently replaced.
+    private static string ResolveDotNetRoot()
+    {
+        string? pinned = Environment.GetEnvironmentVariable("UNREALSHARP_DOTNET_ROOT");
+        if (!string.IsNullOrWhiteSpace(pinned))
+        {
+            if (IsCompatibleDotNetRoot(pinned.Trim()))
+            {
+                return pinned.Trim();
+            }
 
-			string DotnetExe = OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet";
+            throw new InvalidOperationException(
+                $"UnrealSharp's selected .NET SDK root is no longer valid: '{pinned}'. " +
+                "A .NET 10 SDK >= 10.0.201 with Runtime and hostfxr is required.");
+        }
 
-			string? DotnetRoot = Environment.GetEnvironmentVariable("DOTNET_ROOT");
-			if (!string.IsNullOrEmpty(DotnetRoot))
-			{
-				string Candidate = Path.Combine(DotnetRoot, DotnetExe);
-				if (File.Exists(Candidate) && !IsUnrealBundledDotNet(Candidate))
-				{
-					_cachedExecutable = Candidate;
-					return _cachedExecutable;
-				}
-			}
+        var candidates = new List<string>();
+        candidates.Add(Environment.GetEnvironmentVariable("DOTNET_ROOT") ?? string.Empty);
+        if (OperatingSystem.IsWindows())
+        {
+            candidates.Add(Environment.GetEnvironmentVariable("DOTNET_ROOT_X64") ?? string.Empty);
+        }
+        string? path = Environment.GetEnvironmentVariable("PATH");
+        if (!string.IsNullOrEmpty(path))
+        {
+            candidates.AddRange(path.Split(Path.PathSeparator));
+        }
+        if (OperatingSystem.IsWindows())
+        {
+            candidates.Add(Path.Combine(Environment.GetEnvironmentVariable("ProgramFiles") ?? string.Empty, "dotnet"));
+            candidates.Add(Path.Combine(Environment.GetEnvironmentVariable("LOCALAPPDATA") ?? string.Empty, "Microsoft", "dotnet"));
+        }
+        else if (OperatingSystem.IsMacOS())
+        {
+            candidates.Add("/usr/local/share/dotnet");
+            candidates.Add("/opt/homebrew/opt/dotnet/libexec");
+            candidates.Add(Path.Combine(Environment.GetEnvironmentVariable("HOME") ?? string.Empty, ".dotnet"));
+        }
+        else if (OperatingSystem.IsLinux())
+        {
+            candidates.Add("/usr/share/dotnet");
+            candidates.Add("/usr/local/share/dotnet");
+            candidates.Add(Path.Combine(Environment.GetEnvironmentVariable("HOME") ?? string.Empty, ".dotnet"));
+        }
 
-			string? PathVariable = Environment.GetEnvironmentVariable("PATH");
-			if (PathVariable != null)
-			{
-				string[] PathEntries = PathVariable.Split(Path.PathSeparator);
+        foreach (string candidate in candidates)
+        {
+            string root = candidate.Trim();
+            if (IsCompatibleDotNetRoot(root))
+            {
+                return root;
+            }
+        }
 
-				foreach (string PathEntry in PathEntries)
-				{
-					if (string.IsNullOrWhiteSpace(PathEntry))
-					{
-						continue;
-					}
+        throw new InvalidOperationException(
+            "Could not find a compatible .NET 10 SDK (>= 10.0.201) with Runtime and hostfxr. " +
+            "Install .NET 10 SDK or set UNREALSHARP_DOTNET_ROOT to its directory.");
+    }
 
-					string Candidate = Path.Combine(PathEntry.Trim(), DotnetExe);
+    private static bool IsCompatibleDotNetRoot(string root)
+    {
+        if (string.IsNullOrWhiteSpace(root) ||
+            IsUnrealBundledDotNet(Path.Combine(root, DotNetExeName)) ||
+            !File.Exists(Path.Combine(root, DotNetExeName)))
+        {
+            return false;
+        }
 
-					if (!File.Exists(Candidate) || IsUnrealBundledDotNet(Candidate))
-					{
-						continue;
-					}
+        return HasVersionedLibrary(Path.Combine(root, "sdk"), "MSBuild.dll", MinimumSdkVersion, "dotnet.dll") &&
+               HasVersionedLibrary(Path.Combine(root, "shared", "Microsoft.NETCore.App"), CoreClrFilename) &&
+               HasVersionedLibrary(Path.Combine(root, "host", "fxr"), HostFxrFilename);
+    }
 
-					_cachedExecutable = Candidate;
-					return _cachedExecutable;
-				}
-			}
+    private static bool HasVersionedLibrary(string directory, string library, Version? minimum = null,
+        string? additionalLibrary = null)
+    {
+        if (!Directory.Exists(directory)) return false;
+        foreach (string folder in Directory.EnumerateDirectories(directory, "10.*"))
+        {
+            if (!TryStableDotNet10Version(Path.GetFileName(folder), out Version? version) ||
+                (minimum != null && version < minimum))
+            {
+                continue;
+            }
 
-			string[] Fallbacks = GetWellKnownInstallPaths();
+            if (File.Exists(Path.Combine(folder, library)) &&
+                (additionalLibrary == null || File.Exists(Path.Combine(folder, additionalLibrary))))
+                return true;
+        }
+        return false;
+    }
 
-			foreach (string Fallback in Fallbacks)
-			{
-				if (File.Exists(Fallback) && !IsUnrealBundledDotNet(Fallback))
-				{
-					_cachedExecutable = Fallback;
-					return _cachedExecutable;
-				}
-			}
+    public static DotnetVersionInfo ParseLatestDotnetVersionsInDirectory(string directory) =>
+        ParseLatestDotnetVersionsInDirectory(directory, null);
 
-			throw new Exception($"Couldn't find {DotnetExe}! Set DOTNET_ROOT or ensure dotnet is on PATH.");
-		}
-	}
+    private static DotnetVersionInfo ParseLatestDotnetVersionsInDirectory(string directory, Version? minimum,
+        string? requiredLibrary = null, string? additionalLibrary = null)
+    {
+        if (!Directory.Exists(directory))
+            throw new DirectoryNotFoundException($"Missing .NET directory: {directory}");
 
-	public static string LatestDotNetSdkPath
-	{
-		get
-		{
-			if (_cachedSdkPath != null)
-			{
-				return _cachedSdkPath;
-			}
+        string? name = null;
+        Version latest = new(0, 0);
+        foreach (string folder in Directory.EnumerateDirectories(directory, "10.*"))
+        {
+            string folderName = Path.GetFileName(folder);
+            if (!TryStableDotNet10Version(folderName, out Version? version) ||
+                (minimum != null && version < minimum) ||
+                (requiredLibrary != null && !File.Exists(Path.Combine(folder, requiredLibrary))) ||
+                (additionalLibrary != null && !File.Exists(Path.Combine(folder, additionalLibrary))) ||
+                (name != null && version <= latest))
+            {
+                continue;
+            }
 
-			if (!Directory.Exists(DotNetSdkDirectory))
-			{
-				throw new Exception($".NET SDK directory not found: {DotNetSdkDirectory}");
-			}
+            name = folderName;
+            latest = version;
+        }
 
-			_cachedSdkPath = Path.Combine(DotNetSdkDirectory, LatestDotNetSdkVersionInfo.VersionName);
-			return _cachedSdkPath;
-		}
-	}
+        if (name == null)
+            throw new InvalidOperationException($"No compatible .NET 10 version in {directory}");
 
-	public static string DotNetSdkDirectory
-	{
-		get
-		{
-			string DotNetExecutableDirectory = Path.GetDirectoryName(DotNetExecutable)!;
-			return Path.Combine(DotNetExecutableDirectory, "sdk");
-		}
-	}
-	
-	public static DotnetVersionInfo LatestDotNetSdkVersionInfo => ParseLatestDotnetVersionsInDirectory(DotNetSdkDirectory);
+        return new DotnetVersionInfo { VersionName = name, LatestVersion = latest };
+    }
 
-	public static DotnetVersionInfo ParseLatestDotnetVersionsInDirectory(string directory)
-	{
-		string[] FolderPaths = Directory.GetDirectories(directory);
+    private static bool TryStableDotNet10Version(string name, out Version version)
+    {
+        if (System.Version.TryParse(name, out Version? parsed) &&
+            parsed.Major == DotnetMajorVersion && parsed.Minor == 0 &&
+            parsed.Build >= 0 && parsed.Revision < 0)
+        {
+            version = parsed;
+            return true;
+        }
+        version = new Version(0, 0);
+        return false;
+    }
 
-		string? VersionName = null;
-		Version LatestVersion = new Version(0, 0);
+    public static string LatestHostFxrPath
+    {
+        get
+        {
+            string root = Path.Combine(DotnetFolder, "host", "fxr");
+            string name = ParseLatestDotnetVersionsInDirectory(root, null, HostFxrFilename).VersionName;
+            return Path.Combine(root, name, HostFxrFilename);
+        }
+    }
 
-		foreach (string FolderPath in FolderPaths)
-		{
-			string FolderName = Path.GetFileName(FolderPath);
-			int DashIndex = FolderName.IndexOf('-');
-			string NumericPart = DashIndex < 0 ? FolderName : FolderName.Substring(0, DashIndex);
-
-			if (!System.Version.TryParse(NumericPart, out Version? ParsedVersion))
-			{
-				continue;
-			}
-
-			if (ParsedVersion.Major != DotnetMajorVersion)
-			{
-				continue;
-			}
-
-			if (ParsedVersion <= LatestVersion)
-			{
-				continue;
-			}
-
-			LatestVersion = ParsedVersion;
-			VersionName = FolderName;
-		}
-
-		if (VersionName == null)
-		{
-			throw new Exception($"Couldn't find .NET SDK version {DotnetMajorVersion}.x in {DotNetSdkDirectory}");
-		}
-		
-		return new DotnetVersionInfo
-		{
-			VersionName = VersionName,
-			LatestVersion = LatestVersion
-		};
-	}
-	
-	public static string LatestHostFxrPath
-	{
-		get
-		{
-			string HostFxrDirectory = Path.Combine(DotnetFolder, "host", "fxr");
-			DotnetVersionInfo LatestHostFxrVersionInfo = ParseLatestDotnetVersionsInDirectory(HostFxrDirectory);
-			return Path.Combine(HostFxrDirectory, LatestHostFxrVersionInfo.VersionName, HostFxrFilename);
-		}
-	}
-
-	private static bool IsUnrealBundledDotNet(string dotnetPath)
-	{
-		string Normalised = dotnetPath.Replace('\\', '/');
-		return Normalised.Contains("/Binaries/ThirdParty/DotNet/", StringComparison.OrdinalIgnoreCase);
-	}
-
-	private static string[] GetWellKnownInstallPaths()
-	{
-		if (OperatingSystem.IsWindows())
-		{
-			string ProgramFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-			return
-			[
-				Path.Combine(ProgramFiles, "dotnet", "dotnet.exe")
-			];
-		}
-
-		if (OperatingSystem.IsMacOS())
-		{
-			return
-			[
-				"/usr/local/share/dotnet/dotnet",
-				"/opt/homebrew/bin/dotnet",
-				"/opt/homebrew/Cellar/dotnet/dotnet"
-			];
-		}
-
-		if (OperatingSystem.IsLinux())
-		{
-			return
-			[
-				"/usr/share/dotnet/dotnet",
-				"/usr/local/share/dotnet/dotnet",
-				"/usr/bin/dotnet",
-				"/snap/bin/dotnet"
-			];
-		}
-
-		return [];
-	}
+    private static bool IsUnrealBundledDotNet(string path) =>
+        path.Replace('\\', '/').Contains("/Binaries/ThirdParty/DotNet/",
+            StringComparison.OrdinalIgnoreCase);
 }
