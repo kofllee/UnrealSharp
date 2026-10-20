@@ -29,10 +29,27 @@ void FUnrealSharpCoreModule::StartupModule()
 	// installer closes before the CLR and the managed bindings are initialized.
 	if (!UnrealSharp::InstallationUtilities::IsDotNetSdkInstalled())
 	{
-		if (FApp::IsUnattended() || !UnrealSharp::DotNetInstaller::InstallSdkDuringStartup())
+		if (FApp::IsUnattended())
 		{
-			UE_LOGFMT(LogUnrealSharp, Error, ".NET 10 SDK installation failed or was cancelled.");
-			if (!FApp::IsUnattended()) { FPlatformMisc::RequestExit(false); }
+			UE_LOGFMT(LogUnrealSharp, Error, ".NET 10 SDK is required for an unattended Editor session.");
+			return;
+		}
+
+		const UnrealSharp::DotNetInstaller::EInstallSdkResult Result =
+			UnrealSharp::DotNetInstaller::InstallSdkDuringStartup();
+		if (Result != UnrealSharp::DotNetInstaller::EInstallSdkResult::Success)
+		{
+			if (Result == UnrealSharp::DotNetInstaller::EInstallSdkResult::Cancelled)
+			{
+				UE_LOGFMT(LogUnrealSharp, Display, ".NET 10 SDK setup cancelled. Requesting Editor exit.");
+			}
+			else
+			{
+				UE_LOGFMT(LogUnrealSharp, Error, ".NET 10 SDK setup could not be completed.");
+			}
+			// Defer shutdown to the engine rather than terminating the process
+			// while the plugin loader is still on the stack.
+			FPlatformMisc::RequestExit(false);
 			return;
 		}
 	}

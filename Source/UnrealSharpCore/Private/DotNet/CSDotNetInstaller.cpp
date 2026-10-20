@@ -3,6 +3,7 @@
 #if WITH_EDITOR
 #include "CSInstallationUtilities.h"
 #include "Framework/Application/SlateApplication.h"
+#include "GenericPlatform/GenericWindowDefinition.h"
 #include "HAL/FileManager.h"
 #include "HAL/PlatformProcess.h"
 #include "Misc/FileHelper.h"
@@ -128,6 +129,9 @@ public:
 	void Construct(const FArguments&)
 	{
 		Status = FText::FromString(TEXT("The .NET 10 SDK and Runtime are required by UnrealSharp."));
+		// The window may be created while the Unreal splash screen is still up.
+		// Bring it forward once it has an actual native window and the modal pumps Slate.
+		RegisterActiveTimer(0.0f, FWidgetActiveTimerDelegate::CreateSP(this, &SInstallSdk::FocusWindow));
 		ChildSlot
 		[
 			SNew(SBox).WidthOverride(490.0f)
@@ -183,8 +187,19 @@ public:
 	}
 	void SetWindow(const TSharedRef<SWindow>& InWindow) { Window = InWindow; }
 	bool Succeeded() const { return bSucceeded; }
+	bool WasCancelled() const { return bCancelled; }
 
 private:
+	EActiveTimerReturnType FocusWindow(double, float)
+	{
+		if (const TSharedPtr<SWindow> Dialog = Window.Pin())
+		{
+			Dialog->BringToFront(true);
+			Dialog->FlashWindow();
+		}
+		return EActiveTimerReturnType::Stop;
+	}
+
 	FText GetStatus() const { return Status; }
 	EVisibility GetProgressVisibility() const { return bInstalling ? EVisibility::Visible : EVisibility::Collapsed; }
 	EVisibility GetCancelVisibility() const
@@ -200,6 +215,8 @@ private:
 	// so a click queued just as installation starts cannot interrupt extraction.
 	void RefreshStage()
 	{
+		// Cancel before Install has no status file; never try to read an empty path.
+		if (StatusPath.IsEmpty()) { return; }
 		FString Text;
 		if (!FFileHelper::LoadFileToString(Text, *StatusPath)) { return; }
 		Text = Text.TrimStartAndEnd();
@@ -319,6 +336,7 @@ private:
 		}
 		CloseProcess();
 		bInstalling = false;
+		bCancelled = true;
 		Cleanup();
 		if (const TSharedPtr<SWindow> Dialog = Window.Pin()) { Dialog->RequestDestroyWindow(); }
 		return FReply::Handled();
@@ -331,20 +349,23 @@ private:
 	FProcHandle Process;
 	bool bInstalling = false;
 	bool bSucceeded = false;
+	bool bCancelled = false;
 	EInstallPhase Phase = EInstallPhase::Ready;
 };
 
-bool InstallSdkDuringStartup()
+EInstallSdkResult InstallSdkDuringStartup()
 {
 	if (!FSlateApplication::IsInitialized())
 	{
 		UE_LOGFMT(LogUnrealSharp, Error, "Cannot show SDK installer: Slate is not initialized during plugin loading.");
-		return false;
+		return EInstallSdkResult::Failed;
 	}
 	const TSharedRef<SWindow> Dialog = SNew(SWindow)
 		.Title(FText::FromString(TEXT("UnrealSharp - Install .NET 10 SDK")))
 		.SizingRule(ESizingRule::Autosized)
 		.CreateTitleBar(false) // No system Close button to bypass safe-stage cancellation.
+		.IsTopmostWindow(true)
+		.ActivationPolicy(EWindowActivationPolicy::Always)
 		.SupportsMinimize(false)
 		.SupportsMaximize(false);
 	const TSharedRef<SInstallSdk> Installer = SNew(SInstallSdk);
@@ -352,7 +373,8 @@ bool InstallSdkDuringStartup()
 	Dialog->SetContent(Installer);
 	UE_LOGFMT(LogUnrealSharp, Display, "Waiting for .NET 10 SDK installation during Loading Plugins.");
 	FSlateApplication::Get().AddModalWindow(Dialog, FSlateApplication::Get().GetActiveTopLevelWindow(), false);
-	return Installer->Succeeded();
+	if (Installer->Succeeded()) { return EInstallSdkResult::Success; }
+	return Installer->WasCancelled() ? EInstallSdkResult::Cancelled : EInstallSdkResult::Failed;
 }
 } // namespace UnrealSharp::DotNetInstaller
 #endif // WITH_EDITOR

@@ -4,6 +4,12 @@
 namespace UnrealSharp::DotNetInstaller
 {
 	// Called synchronously during Loading Plugins. Never restarts the Editor.
-	bool InstallSdkDuringStartup();
+	enum class EInstallSdkResult : uint8
+	{
+		Success,
+		Cancelled,
+		Failed
+	};
+	EInstallSdkResult InstallSdkDuringStartup();
 }
 #endif
