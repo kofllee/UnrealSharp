@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CSManagedAssembly.h"
 #include "CSObjectID.h"
@@ -118,6 +118,13 @@ public:
 	TMap<FCSObjectID, TMap<FCSObjectID, TSharedPtr<FGCHandle>>>& GetManagedInterfaceWrappers() { return ManagedInterfaceWrapperHandles; }
 
 private:
+	friend class UCSManagedAssembly;
+	friend struct FCSManagedHandleTestAccess;
+	void RegisterManagedObjectHandle(const TSharedPtr<FGCHandle>& Handle, const TSharedPtr<const FGCHandle>& Owner);
+	void DisposeManagedObjectHandle(const TSharedPtr<FGCHandle>& Handle);
+	void ReleaseAssemblyManagedObjects(const TSharedPtr<const FGCHandle>& Owner);
+	TMap<const FGCHandle*, TSharedPtr<const FGCHandle>> ManagedHandleOwners;
+
 	void InitialAssemblyLoad();
 	void OnEnginePreExit() { GUObjectArray.RemoveUObjectDeleteListener(this); }
 

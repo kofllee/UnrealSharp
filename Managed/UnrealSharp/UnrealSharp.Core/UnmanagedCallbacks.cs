@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using UnrealSharp.Core.Marshallers;
 
@@ -235,13 +235,14 @@ public static class UnmanagedCallbacks
             return;
         }
         
-        if (foundHandle.Target is IDisposable disposable)
+        object? target = foundHandle.Target;
+        Assembly? foundAssembly = GCHandleUtilities.GetObjectFromHandlePtr<Assembly>(assemblyHandle);
+        foundAssembly ??= target is Type type ? type.Assembly : target is Assembly assembly ? assembly : target?.GetType().Assembly;
+        GCHandleUtilities.Free(foundHandle, foundAssembly);
+        if (target is IDisposable disposable)
         {
             disposable.Dispose();
         }
-
-        Assembly? foundAssembly = GCHandleUtilities.GetObjectFromHandlePtr<Assembly>(assemblyHandle);
-        GCHandleUtilities.Free(foundHandle, foundAssembly);
     }
 
     [UnmanagedCallersOnly]

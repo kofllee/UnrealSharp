@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CSManagedCallbacksCache.h"
 #include "CSManagedGCHandle.generated.h"
@@ -32,8 +32,9 @@ struct FGCHandle
             return;
         }
 
-        GetManagedCallbacks().Dispose(Handle, AssemblyHandle);
+        FGCHandleIntPtr DisposingHandle = Handle;
         Invalidate();
+        GetManagedCallbacks().Dispose(DisposingHandle, AssemblyHandle);
     }
 
     void Invalidate() { Handle.ManagedHandlePtr = nullptr; }

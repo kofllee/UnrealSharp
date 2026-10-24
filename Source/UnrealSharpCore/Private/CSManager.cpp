@@ -1,4 +1,4 @@
-﻿#include "CSManager.h"
+#include "CSManager.h"
 #include "CSManagedGCHandle.h"
 #include "CSManagedAssembly.h"
 #include "UnrealSharpCore.h"
@@ -32,41 +32,6 @@ void UCSManager::Initialize()
 	OnInitialized.Broadcast(*this);
 }
 
-void UCSManager::NotifyUObjectDeleted(const UObjectBase* Object, int32 Index)
-{
-	TRACE_CPUPROFILER_EVENT_SCOPE(UCSManager::NotifyUObjectDeleted);
-	
-	FCSObjectID ObjectID(Index);
-
-	TSharedPtr<FGCHandle> Handle;
-	if (!ManagedObjectHandles.RemoveAndCopyValueByHash(ObjectID.Get(), ObjectID, Handle))
-	{
-		return;
-	}
-
-	UCSManagedAssembly* Assembly = FindOwningAssembly(Object->GetClass());
-	TSharedPtr<const FGCHandle> AssemblyHandle = Assembly->GetAssemblyHandle();
-	
-#if WITH_EDITOR
-	if (!AssemblyHandle.IsValid())
-	{
-		return;
-	}
-#endif
-	
-	Handle->Dispose(AssemblyHandle->GetHandle());
-	 
-	TMap<FCSObjectID, TSharedPtr<FGCHandle>> FoundHandles;
-	if (!ManagedInterfaceWrapperHandles.RemoveAndCopyValueByHash(ObjectID.Get(), ObjectID, FoundHandles))
-	{
-		return;
-	}
-
-	for (const TTuple<FCSObjectID, TSharedPtr<FGCHandle>>& IDToHandleKVP : FoundHandles)
-	{
-		IDToHandleKVP.Value->Dispose(AssemblyHandle->GetHandle());
-	}
-}
 
 UPackage* UCSManager::FindOrAddManagedPackage(const FCSNamespace& Namespace)
 {
@@ -259,12 +224,12 @@ FGCHandle UCSManager::FindManagedObject(const UObject* Object)
 	if (TSharedPtr<FGCHandle>* FoundHandle = ManagedObjectHandles.FindByHash(ObjectID.Get(), ObjectID))
 	{
 		TSharedPtr<FGCHandle> HandlePtr = *FoundHandle;
-#if WITH_EDITOR
 		if (HandlePtr.IsValid() && !HandlePtr->IsNull())
-#endif
 		{
 			return *HandlePtr;
 		}
+		ManagedObjectHandles.RemoveByHash(ObjectID.Get(), ObjectID);
+		DisposeManagedObjectHandle(HandlePtr);
 	}
 
 	UCSManagedAssembly* OwningAssembly = FindOwningAssembly(Object->GetClass());
@@ -274,12 +239,13 @@ FGCHandle UCSManager::FindManagedObject(const UObject* Object)
 		return FGCHandle::InvalidHandle();
 	}
 
-	return *OwningAssembly->CreateManagedObjectFromNative(Object);
+	TSharedPtr<FGCHandle> Created = OwningAssembly->CreateManagedObjectFromNative(Object);
+	return Created.IsValid() ? *Created : FGCHandle::InvalidHandle();
 }
 
 FGCHandle UCSManager::FindManagedInterfaceWrapper(UObject* Object, UClass* InterfaceClass)
 {
-	if (!Object->GetClass()->ImplementsInterface(InterfaceClass))
+	if (!IsValid(Object) || !IsValid(InterfaceClass) || !Object->GetClass()->ImplementsInterface(InterfaceClass))
 	{
 		return FGCHandle::InvalidHandle();
 	}

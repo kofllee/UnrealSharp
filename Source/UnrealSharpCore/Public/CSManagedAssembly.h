@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CSFieldName.h"
 #include "CSManagedGCHandle.h"
@@ -34,7 +34,7 @@ public:
 	UNREALSHARPCORE_API void UnloadAssembly();
 
 	UNREALSHARPCORE_API bool IsAssemblyLoading() const { return bIsLoading; }
-	UNREALSHARPCORE_API bool IsAssemblyLoaded() const { return AssemblyHandle.IsValid() && !AssemblyHandle->IsNull(); }
+	UNREALSHARPCORE_API bool IsAssemblyLoaded() const { return !bIsUnloading && AssemblyHandle.IsValid() && !AssemblyHandle->IsNull(); }
 	
 	UNREALSHARPCORE_API const FString& GetAssemblyFilePath() const { return AssemblyFilePath; }
 	UNREALSHARPCORE_API FString GetAssemblyFileName() const { return FPaths::GetCleanFilename(AssemblyFilePath); }
@@ -77,6 +77,7 @@ public:
 	TSharedPtr<const FGCHandle> GetAssemblyHandle() const { return AssemblyHandle; }
 
 private:
+	friend struct FCSManagedHandleTestAccess;
 	void OnTypeReflectionDataChanged(TSharedPtr<FCSManagedTypeDefinition> ManagedTypeDefinition);
 
 	TMap<FCSFieldName, TSharedPtr<FCSManagedTypeDefinition>> ManagedTypeRegistry;
@@ -84,11 +85,13 @@ private:
 	
 	TMap<FCSFieldName, TSharedPtr<FGCHandle>> ManagedTypeHandles;
 	TArray<TSharedPtr<FGCHandle>> ManagedHandles;
+	TMap<const FGCHandle*, TMap<FString, TSharedPtr<FGCHandle>>> ManagedMethodHandles;
 	
 	TSharedPtr<FGCHandle> AssemblyHandle;
 
 	FString AssemblyFilePath;
 	
+	bool bIsUnloading = false;
 	bool bIsLoading = false;
 	bool bIsCollectible = false;
 	
