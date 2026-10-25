@@ -10,6 +10,7 @@ struct FCSManagedHandleTestAccess
  static UCSManager*& Instance(){return UCSManager::Instance;}
  static void Register(UCSManager& Manager,const TSharedPtr<FGCHandle>& Handle,const TSharedPtr<FGCHandle>& Owner){Manager.RegisterManagedObjectHandle(Handle,Owner);}
  static void Dispose(UCSManager& Manager,const TSharedPtr<FGCHandle>& Handle){Manager.DisposeManagedObjectHandle(Handle);}
+ static void Loading(UCSManagedAssembly& Assembly,bool Value){Assembly.bIsLoading=Value;}
  static void OwnRoot(UCSManager& Manager,UObject* Object){Object->AddToRoot();Manager.OwnedRootObjects.Add(Object);}
  static int32 Roots(UCSManager& Manager){return Manager.OwnedRootObjects.Num();}
  static void Protect(UCSManager& Manager,UObject* Object){Manager.ProtectReferencedObject(Object);}
@@ -29,11 +30,13 @@ namespace
  TMap<uint8*,int32> Frees;
  TMap<uint8*,uint8*> Owners;
  TSharedPtr<FGCHandle> Reentrant;
+ TFunction<void()> DuringDispose;
  int32 Lookups=0,Creations=0;
  UPTRINT Next=1000;
  void __stdcall Dispose(FGCHandleIntPtr Handle,FGCHandleIntPtr Assembly)
  {
   ++Frees.FindOrAdd(Handle.ManagedHandlePtr);Owners.Add(Handle.ManagedHandlePtr,Assembly.ManagedHandlePtr);
+  if(DuringDispose){auto Callback=MoveTemp(DuringDispose);Callback();}
   if(Reentrant.IsValid())Reentrant->Dispose(Assembly);
  }
  uint8* __stdcall Method(void*,const TCHAR*){++Lookups;return reinterpret_cast<uint8*>(++Next);}
@@ -44,7 +47,7 @@ namespace
  {
   FCSManagedCallbacks Saved=GetManagedCallbacks();FCSManagedPluginCallbacks Plugins=GetManagedPluginCallbacks();UCSManager* Manager=FCSManagedHandleTestAccess::Instance();
   FCallbacksScope(UCSManager* TestManager){GetManagedCallbacks().*Access(FDisposeTag{})=&Dispose;GetManagedCallbacks().GetManagedMethod=&Method;GetManagedCallbacks().CreateNewManagedObject=&Create;GetManagedPluginCallbacks().UnloadPlugin=&Unload;FCSManagedHandleTestAccess::Instance()=TestManager;Frees.Empty();Owners.Empty();Lookups=0;Creations=0;}
-  ~FCallbacksScope(){Reentrant.Reset();GetManagedCallbacks()=Saved;GetManagedPluginCallbacks()=Plugins;FCSManagedHandleTestAccess::Instance()=Manager;}
+  ~FCallbacksScope(){DuringDispose=nullptr;Reentrant.Reset();GetManagedCallbacks()=Saved;GetManagedPluginCallbacks()=Plugins;FCSManagedHandleTestAccess::Instance()=Manager;}
  };
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FCSManagedHandleLifecycleTest,"UnrealSharp.Handles.Ownership",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
@@ -52,6 +55,8 @@ bool FCSManagedHandleLifecycleTest::RunTest(const FString&)
 {
  TStrongObjectPtr<UCSManager> Manager(NewObject<UCSManager>());FCallbacksScope Scope(Manager.Get());
  TStrongObjectPtr<UCSManagedAssembly> A(NewObject<UCSManagedAssembly>()),B(NewObject<UCSManagedAssembly>());
+ TStrongObjectPtr<UCSManagedAssembly> LoadingAssembly(NewObject<UCSManagedAssembly>());
+ FCSManagedHandleTestAccess::Loading(*LoadingAssembly,true);TestFalse(TEXT("Reentrant load before the assembly cell is assigned is rejected"),LoadingAssembly->LoadAssembly());FCSManagedHandleTestAccess::Loading(*LoadingAssembly,false);
  auto OwnerA=Handle(),OwnerB=Handle();FCSManagedHandleTestAccess::Initialize(*A,OwnerA);FCSManagedHandleTestAccess::Initialize(*B,OwnerB);
  auto Object=Handle(),Interface=Handle(),Other=Handle();uint8* ObjectPtr=Object->GetPointer();uint8* InterfacePtr=Interface->GetPointer();
  Manager->GetManagedObjectHandles().Add(-101,Object);Manager->GetManagedInterfaceWrappers().FindOrAdd(-101).Add(-201,Interface);Manager->GetManagedObjectHandles().Add(-102,Other);
@@ -76,6 +81,17 @@ bool FCSManagedHandleLifecycleTest::RunTest(const FString&)
  TestEqual(TEXT("One callback for repeated method lookup"),Lookups,1);TestEqual(TEXT("Only type and method metadata retained"),FCSManagedHandleTestAccess::Metadata(*B),2);
  auto Duplicate=reinterpret_cast<uint8*>(++Next);TestTrue(TEXT("Duplicate type registration preserves canonical cell"),B->AddTypeHandle(Field,Duplicate)==Type);TestEqual(TEXT("Duplicate incoming type handle released"),Frees.FindRef(Duplicate),1);
  TStrongObjectPtr<UObject> DirectObject(NewObject<UCurveFloat>());auto Direct=B->CreateManagedObjectFromNative(DirectObject.Get(),Type);TestTrue(TEXT("Direct wrapper creation preserves live canonical handle"),B->CreateManagedObjectFromNative(DirectObject.Get(),Type)==Direct);TestEqual(TEXT("Direct wrapper created only once"),Creations,1);
+ auto Rejected=reinterpret_cast<uint8*>(++Next);auto RejectedRegistration=reinterpret_cast<uint8*>(++Next);
+ DuringDispose=[&,Rejected,RejectedRegistration]()
+ {
+  TestFalse(TEXT("Reentrant load while unloading rejected before replacing the owner cell"),B->LoadAssembly());
+  TestFalse(TEXT("New incoming type rejected during unload"),B->AddTypeHandle(Field,Rejected).IsValid());
+  TestEqual(TEXT("Rejected incoming type freed once"),Frees.FindRef(Rejected),1);
+  TestFalse(TEXT("Owned alias rejected during unload"),B->AddTypeHandle(Field,Type->GetPointer()).IsValid());
+  TestFalse(TEXT("Owned type alias is not freed early"),Type->IsNull());
+  B->RegisterManagedType(const_cast<TCHAR*>(TEXT("LateType")),TEXT("Tests"),ECSFieldType::Class,RejectedRegistration,const_cast<TCHAR*>(TEXT("invalid JSON must never be parsed")));
+  TestEqual(TEXT("Rejected registration handle freed without compiling metadata"),Frees.FindRef(RejectedRegistration),1);
+ };
  B->UnloadAssembly();TestTrue(TEXT("Type invalidated"),Type->IsNull());TestTrue(TEXT("Method invalidated"),First->IsNull());TestTrue(TEXT("Other object invalidated"),Other->IsNull());TestEqual(TEXT("No owner records after unload"),FCSManagedHandleTestAccess::Owners(*Manager),0);TestEqual(TEXT("No metadata after unload"),FCSManagedHandleTestAccess::Metadata(*B),0);
  for(int32 Cycle=0;Cycle<5;++Cycle)
  {

@@ -44,6 +44,11 @@ bool UCSManagedAssembly::LoadAssembly()
 		return true;
 	}
 
+	if (bIsLoading || bIsUnloading)
+	{
+		return false;
+	}
+
 	if (!FPaths::FileExists(AssemblyFilePath))
 	{
 		UE_LOGFMT(LogUnrealSharp, Error, "Assembly path does not exist: {0}", AssemblyFilePath);
@@ -157,6 +162,11 @@ void UCSManagedAssembly::RegisterManagedType(TCHAR* InFieldName, const TCHAR* In
 	UE_LOGFMT(LogUnrealSharp, Verbose, "Registering type {0}.{1}", InNamespace, InFieldName);
 
 	const FCSFieldName FieldName(InFieldName, FCSNamespace(InNamespace), GetFName(), FieldType);
+	if (bIsUnloading)
+	{
+		AddTypeHandle(FieldName, TypeGCHandle);
+		return;
+	}
 	TSharedPtr<FCSManagedTypeDefinition>& ManagedTypeDefinition = ManagedTypeRegistry.FindOrAdd(FieldName);
 	
 #if WITH_EDITOR

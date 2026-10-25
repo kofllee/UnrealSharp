@@ -48,6 +48,7 @@ public:
 #endif
 
 	TSharedPtr<FGCHandle> FindTypeHandle(const FCSFieldName& FieldName);
+	// Consumes an incoming handle, including rejection during unload; an already owned alias stays owned here.
 	TSharedPtr<FGCHandle> AddTypeHandle(const FCSFieldName& FieldName, uint8* TypeHandle);
 	TSharedPtr<FGCHandle> GetManagedMethod(const TSharedPtr<FGCHandle>& TypeHandle, const FString& MethodName);
 

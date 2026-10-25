@@ -36,8 +36,18 @@ TSharedPtr<FGCHandle> UCSManagedAssembly::FindTypeHandle(const FCSFieldName& Fie
 
 TSharedPtr<FGCHandle> UCSManagedAssembly::AddTypeHandle(const FCSFieldName& FieldName, uint8* TypeHandle)
 {
-	if (!TypeHandle || bIsUnloading)
+	if (!TypeHandle)
 	{
+		return nullptr;
+	}
+	if (bIsUnloading)
+	{
+		const auto* Existing = ManagedTypeHandles.Find(FieldName);
+		if (!Existing || !Existing->IsValid() || (*Existing)->GetPointer() != TypeHandle)
+		{
+			FGCHandle Rejected(TypeHandle);
+			Rejected.Dispose(AssemblyHandle.IsValid() ? AssemblyHandle->GetHandle() : FGCHandleIntPtr{});
+		}
 		return nullptr;
 	}
 
