@@ -20,10 +20,11 @@ class UCSManager : public UObject, public FUObjectArray::FUObjectDeleteListener
 	GENERATED_BODY()
 public:
 	void Initialize();
+	virtual void BeginDestroy() override;
 	
 	// FUObjectDeleteListener overrides
 	virtual void NotifyUObjectDeleted(const UObjectBase* Object, int32 Index) override;
-	virtual void OnUObjectArrayShutdown() override { GUObjectArray.RemoveUObjectDeleteListener(this); }
+	virtual void OnUObjectArrayShutdown() override { GUObjectArray.RemoveUObjectDeleteListener(this); bRegisteredDeleteListener = false; }
 	// End FUObjectDeleteListener overrides
 	
 	UNREALSHARPCORE_API static UCSManager& Get()
@@ -126,7 +127,14 @@ private:
 	TMap<const FGCHandle*, TSharedPtr<const FGCHandle>> ManagedHandleOwners;
 
 	void InitialAssemblyLoad();
-	void OnEnginePreExit() { GUObjectArray.RemoveUObjectDeleteListener(this); }
+	void OnEnginePreExit();
+	void ProtectReferencedObject(UObject* Object);
+	void ReleaseObjectProtection(UObject* Object);
+	void RemoveAssembly(UCSManagedAssembly* Assembly);
+	void ReleaseObjectReferences();
+	TSet<TWeakObjectPtr<UObject>> OwnedRootObjects;
+	bool bRegisteredDeleteListener = false;
+	bool bIsShuttingDown = false;
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UPackage>> ManagedPackages;

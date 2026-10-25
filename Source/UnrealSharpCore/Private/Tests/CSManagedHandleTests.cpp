@@ -10,6 +10,13 @@ struct FCSManagedHandleTestAccess
  static UCSManager*& Instance(){return UCSManager::Instance;}
  static void Register(UCSManager& Manager,const TSharedPtr<FGCHandle>& Handle,const TSharedPtr<FGCHandle>& Owner){Manager.RegisterManagedObjectHandle(Handle,Owner);}
  static void Dispose(UCSManager& Manager,const TSharedPtr<FGCHandle>& Handle){Manager.DisposeManagedObjectHandle(Handle);}
+ static void OwnRoot(UCSManager& Manager,UObject* Object){Object->AddToRoot();Manager.OwnedRootObjects.Add(Object);}
+ static int32 Roots(UCSManager& Manager){return Manager.OwnedRootObjects.Num();}
+ static void Protect(UCSManager& Manager,UObject* Object){Manager.ProtectReferencedObject(Object);}
+ static void RegisterAssembly(UCSManager& Manager,UCSManagedAssembly* Assembly){Manager.Assemblies.Add(Assembly->GetFName(),Assembly);Manager.PackageToManagedAssembly.Add(-501,Assembly);}
+ static void Remove(UCSManager& Manager,UCSManagedAssembly* Assembly){Manager.RemoveAssembly(Assembly);}
+ static void Shutdown(UCSManager& Manager){Manager.OnEnginePreExit();}
+ static int32 CachedAssemblies(UCSManager& Manager){return Manager.PackageToManagedAssembly.Num();}
  static int32 Owners(UCSManager& Manager){return Manager.ManagedHandleOwners.Num();}
  static int32 Metadata(UCSManagedAssembly& Assembly){return Assembly.ManagedHandles.Num();}
  static void Initialize(UCSManagedAssembly& Assembly,const TSharedPtr<FGCHandle>& Owner){Assembly.AssemblyHandle=Owner;Assembly.bIsCollectible=true;}
@@ -77,5 +84,30 @@ bool FCSManagedHandleLifecycleTest::RunTest(const FString&)
  }
  TestEqual(TEXT("One lookup per assembly generation"),Lookups,6);
  return true;
+}
+#endif
+
+#if WITH_DEV_AUTOMATION_TESTS
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FCSManagerRootOwnershipTest,"UnrealSharp.Handles.NativeRootOwnership",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
+bool FCSManagerRootOwnershipTest::RunTest(const FString&)
+{
+ TStrongObjectPtr<UCSManager> Manager(NewObject<UCSManager>());
+ TStrongObjectPtr<UCSManagedAssembly> Owned(NewObject<UCSManagedAssembly>()),External(NewObject<UCSManagedAssembly>());
+ FCSManagedHandleTestAccess::Protect(*Manager,Owned.Get());
+ TestFalse(TEXT("Ordinary Editor manager does not root its child"),Owned->IsRooted());
+ External->AddToRoot();FCSManagedHandleTestAccess::Protect(*Manager,External.Get());
+ TestEqual(TEXT("External root is not claimed"),FCSManagedHandleTestAccess::Roots(*Manager),0);
+ FCSManagedHandleTestAccess::OwnRoot(*Manager,Owned.Get());FCSManagedHandleTestAccess::RegisterAssembly(*Manager,Owned.Get());
+ FCSManagedHandleTestAccess::Remove(*Manager,Owned.Get());
+ TestFalse(TEXT("Real native removal releases owned root"),Owned->IsRooted());
+ TestEqual(TEXT("Native removal clears secondary cache"),FCSManagedHandleTestAccess::CachedAssemblies(*Manager),0);
+ FCSManagedHandleTestAccess::Remove(*Manager,Owned.Get());
+ FCSManagedHandleTestAccess::OwnRoot(*Manager,Owned.Get());FCSManagedHandleTestAccess::RegisterAssembly(*Manager,Owned.Get());
+ FCSManagedHandleTestAccess::Shutdown(*Manager);FCSManagedHandleTestAccess::Shutdown(*Manager);
+ TestFalse(TEXT("Ownership shutdown unroots once"),Owned->IsRooted());
+ TestTrue(TEXT("Ownership shutdown preserves external root"),External->IsRooted());
+ TestEqual(TEXT("No owned registrations survive shutdown"),FCSManagedHandleTestAccess::Roots(*Manager),0);
+ TestFalse(TEXT("Shutdown prevents registry resurrection"),Manager->LoadAssemblyByPath(TEXT("not-a-path")) != nullptr);
+ External->RemoveFromRoot();return true;
 }
 #endif

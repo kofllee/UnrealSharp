@@ -25,6 +25,7 @@ void UCSManager::Initialize()
 	
 	FCoreDelegates::OnPreExit.AddUObject(this, &UCSManager::OnEnginePreExit);
 	GUObjectArray.AddUObjectDeleteListener(this);
+	bRegisteredDeleteListener = true;
 	
 	InitialAssemblyLoad();
 	
@@ -70,6 +71,7 @@ UPackage* UCSManager::FindOrAddManagedPackage(const FCSNamespace& Namespace)
 		{
 			ParentPackage = NewObject<UPackage>(nullptr, PackageName, RF_Public);
 			ParentPackage->SetPackageFlags(PKG_CompiledIn);
+			ProtectReferencedObject(ParentPackage);
 			ManagedPackages.Add(ParentPackage);
 		}
 	}
@@ -126,7 +128,12 @@ void UCSManager::InitialAssemblyLoad()
 
 UCSManagedAssembly* UCSManager::LoadAssemblyByPath(const FString& AssemblyPath, bool bIsCollectible)
 {
+	if (bIsShuttingDown)
+	{
+		return nullptr;
+	}
 	UCSManagedAssembly* Assembly;
+	bool bNewAssembly = false;
 	
 	const FString AssemblyName = FPaths::GetBaseFilename(AssemblyPath);
 	if (UCSManagedAssembly* ExistingAssembly = FindAssembly(*AssemblyName))
@@ -143,12 +150,18 @@ UCSManagedAssembly* UCSManager::LoadAssemblyByPath(const FString& AssemblyPath, 
 	{
 		Assembly = NewObject<UCSManagedAssembly>(this, *AssemblyName);
 		Assembly->Initialize(AssemblyPath, bIsCollectible);
+		ProtectReferencedObject(Assembly);
+		bNewAssembly = true;
 		
 		Assemblies.Add(Assembly->GetFName(), Assembly);
 	}
 
 	if (!Assembly->LoadAssembly())
 	{
+		if (bNewAssembly)
+		{
+			RemoveAssembly(Assembly);
+		}
 		return nullptr;
 	}
 
