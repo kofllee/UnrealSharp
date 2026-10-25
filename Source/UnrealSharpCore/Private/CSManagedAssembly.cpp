@@ -38,15 +38,15 @@ bool UCSManagedAssembly::LoadAssembly()
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE_TEXT(*FString(TEXT("UCSManagedAssembly::LoadManagedAssembly: ") + GetName()));
 
+	if (bIsLoading || bIsUnloading)
+	{
+		return false;
+	}
+
 	if (IsAssemblyLoaded())
 	{
 		UE_LOGFMT(LogUnrealSharp, Display, "{0} is already loaded", GetName());
 		return true;
-	}
-
-	if (bIsLoading || bIsUnloading)
-	{
-		return false;
 	}
 
 	if (!FPaths::FileExists(AssemblyFilePath))

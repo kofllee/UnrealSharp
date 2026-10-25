@@ -127,3 +127,28 @@ bool FCSManagerRootOwnershipTest::RunTest(const FString&)
  External->RemoveFromRoot();return true;
 }
 #endif
+
+#if WITH_DEV_AUTOMATION_TESTS
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FCSReentrantLoadStateTest,"UnrealSharp.Handles.ReentrantLoadState",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
+bool FCSReentrantLoadStateTest::RunTest(const FString&)
+{
+ TStrongObjectPtr<UCSManager> Manager(NewObject<UCSManager>());
+ TStrongObjectPtr<UCSManagedAssembly> Assembly(NewObject<UCSManagedAssembly>(Manager.Get(),TEXT("ReentrantLoadState")));
+ TSharedPtr<FGCHandle> Owner=MakeShared<FGCHandle>(reinterpret_cast<uint8*>(1));
+ FCSManagedHandleTestAccess::Initialize(*Assembly,Owner);FCSManagedHandleTestAccess::RegisterAssembly(*Manager,Assembly.Get());
+ const FString Path=Assembly->GetName()+TEXT(".dll");
+ FCSManagedHandleTestAccess::Loading(*Assembly,true);
+ TestTrue(TEXT("Populated assembly cell reports loaded while compilation is still loading"),Assembly->IsAssemblyLoaded());
+ TestFalse(TEXT("Direct load rejects loading even after the cell is assigned"),Assembly->LoadAssembly());
+ TestNull(TEXT("Manager load rejects loading before its loaded fast path"),Manager->LoadAssemblyByPath(Path));
+ TestTrue(TEXT("Rejected loads preserve the loading state"),Assembly->IsAssemblyLoading());
+ TestTrue(TEXT("Rejected loads preserve the owner cell"),Assembly->GetAssemblyHandle().Get()==Owner.Get());
+ TestTrue(TEXT("Rejected loads preserve the owner handle"),Owner->GetPointer()==reinterpret_cast<uint8*>(1));
+ TestTrue(TEXT("Rejected loads preserve the registry entry"),Manager->FindAssembly(Assembly->GetFName())==Assembly.Get());
+ FCSManagedHandleTestAccess::Loading(*Assembly,false);
+ TestTrue(TEXT("Completed direct load still uses its loaded fast path"),Assembly->LoadAssembly());
+ TestTrue(TEXT("Completed manager load returns the existing assembly"),Manager->LoadAssemblyByPath(Path)==Assembly.Get());
+ Owner->Invalidate();FCSManagedHandleTestAccess::Remove(*Manager,Assembly.Get());
+ return true;
+}
+#endif

@@ -138,6 +138,11 @@ UCSManagedAssembly* UCSManager::LoadAssemblyByPath(const FString& AssemblyPath, 
 	const FString AssemblyName = FPaths::GetBaseFilename(AssemblyPath);
 	if (UCSManagedAssembly* ExistingAssembly = FindAssembly(*AssemblyName))
 	{
+		if (ExistingAssembly->IsAssemblyLoading())
+		{
+			return nullptr;
+		}
+
 		if (ExistingAssembly->IsAssemblyLoaded())
 		{
 			UE_LOGFMT(LogUnrealSharp, Display, "Assembly {0} is already loaded.", AssemblyName);
