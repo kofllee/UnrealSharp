@@ -1,6 +1,7 @@
 ﻿#include "UnrealSharpCore.h"
 #include "CoreMinimal.h"
 #include "CSManager.h"
+#include "CSDialogUtilities.h"
 #include "CSDotnetUtilties.h"
 #include "CSInstallationUtilities.h"
 #include "DotNet/CSDotNetInstaller.h"
@@ -29,9 +30,10 @@ void FUnrealSharpCoreModule::StartupModule()
 	// installer closes before the CLR and the managed bindings are initialized.
 	if (!UnrealSharp::InstallationUtilities::IsDotNetSdkInstalled())
 	{
-		if (FApp::IsUnattended())
+		if (UnrealSharp::Dialogs::IsHeadless())
 		{
 			UE_LOGFMT(LogUnrealSharp, Error, ".NET 10 SDK is required for an unattended Editor session.");
+			FPlatformMisc::RequestExitWithStatus(true, 1);
 			return;
 		}
 
@@ -62,6 +64,10 @@ void FUnrealSharpCoreModule::StartupModule()
 	if (SdkRoot.IsEmpty())
 	{
 		UE_LOGFMT(LogUnrealSharp, Error, "Unable to resolve a compatible .NET 10 SDK after setup.");
+		if (UnrealSharp::Dialogs::IsHeadless())
+		{
+			FPlatformMisc::RequestExitWithStatus(true, 1);
+		}
 		return;
 	}
 	FPlatformMisc::SetEnvironmentVar(TEXT("UNREALSHARP_DOTNET_ROOT"), *SdkRoot);
@@ -74,6 +80,10 @@ void FUnrealSharpCoreModule::StartupModule()
 		!UnrealSharp::DotNetUtilities::BuildUserSolution())
 	{
 		UE_LOGFMT(LogUnrealSharp, Error, "C# environment verification or compilation failed.");
+		if (UnrealSharp::Dialogs::IsHeadless())
+		{
+			FPlatformMisc::RequestExitWithStatus(true, 1);
+		}
 		return;
 	}
 #endif

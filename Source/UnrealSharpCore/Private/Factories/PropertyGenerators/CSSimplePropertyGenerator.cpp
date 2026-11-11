@@ -1,4 +1,5 @@
 #include "Factories/PropertyGenerators/CSSimplePropertyGenerator.h"
+#include "UObject/Utf8StrProperty.h"
 
 UCSSimplePropertyGenerator::UCSSimplePropertyGenerator(FObjectInitializer const& ObjectInitializer): Super(ObjectInitializer)
 {
@@ -15,6 +16,7 @@ UCSSimplePropertyGenerator::UCSSimplePropertyGenerator(FObjectInitializer const&
 		{ ECSPropertyType::Double, FDoubleProperty::StaticClass() },
 		{ ECSPropertyType::Float, FFloatProperty::StaticClass() },
 		{ ECSPropertyType::String, FStrProperty::StaticClass() },
+		{ ECSPropertyType::Utf8String, FUtf8StrProperty::StaticClass() },
 		{ ECSPropertyType::Name, FNameProperty::StaticClass() },
 		{ ECSPropertyType::Text, FTextProperty::StaticClass() },
 	};

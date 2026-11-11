@@ -20,6 +20,7 @@ public class UnrealSharpCore : ModuleRules
 				"Core", 
 				"GameplayTags", 
 				"UnrealSharpUtilities",
+				"UnrealSharpBinds",
 			}
 			);
 		

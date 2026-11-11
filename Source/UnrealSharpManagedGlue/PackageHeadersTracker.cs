@@ -19,6 +19,8 @@ public static class PackageHeadersTracker
     const string PackageDataFileName = "UnrealSharpPackagesData.json";
     
     private static ConcurrentDictionary<string, PackageHeaders?> _packageHeadersWriteRecord = new();
+
+    public static void Reset() => _packageHeadersWriteRecord.Clear();
     
     public static void DeserializeModuleHeaders()
     {
